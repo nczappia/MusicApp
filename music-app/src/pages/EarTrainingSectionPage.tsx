@@ -13,6 +13,12 @@ const QUIZZES = [
     tag: "Harmonic · Root Position",
     desc: "A chord plays from a random root. Identify it by type — triads, suspended, or sevenths. Choose harmonic or arpeggiated playback, configure which chords to include, and pick your instrument. Tracks score and streak.",
   },
+  {
+    to: "/ear-training/chord-inversions",
+    title: "Chord Inversions",
+    tag: "Harmonic · All Positions",
+    desc: "A chord plays in a random inversion. Beginner: chord type is revealed — identify only the inversion. Advanced: both chord type and inversion are unknown. Pick your difficulty, chords, and instrument.",
+  },
 ];
 
 export default function EarTrainingSectionPage() {

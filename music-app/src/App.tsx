@@ -6,6 +6,7 @@ import FretboardPage from "./pages/FretboardPage";
 import FretboardNoteQuizPage from "./pages/FretboardNoteQuizPage";
 import IntervalQuizPage from "./pages/IntervalQuizPage";
 import ChordQuizPage from "./pages/ChordQuizPage";
+import ChordInversionQuizPage from "./pages/ChordInversionQuizPage";
 
 function SectionTab({ to, label }: { to: string; label: string }) {
   return (
@@ -82,6 +83,7 @@ export default function App() {
           <Route path="/ear-training" element={<EarTrainingSectionPage />} />
           <Route path="/ear-training/intervals" element={<IntervalQuizPage />} />
           <Route path="/ear-training/chords" element={<ChordQuizPage />} />
+          <Route path="/ear-training/chord-inversions" element={<ChordInversionQuizPage />} />
         </Routes>
       </main>
     </div>

@@ -35,6 +35,10 @@ const SECTIONS = [
         name: "Chord Quiz",
         desc: "A chord plays from a random root. Identify it by type — triads, suspended, or sevenths. Harmonic or arpeggiated playback.",
       },
+      {
+        name: "Chord Inversions",
+        desc: "A chord plays in a random inversion. Beginner: chord type shown, identify the inversion. Advanced: identify both.",
+      },
     ],
   },
 ];
