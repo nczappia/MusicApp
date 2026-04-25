@@ -1,6 +1,7 @@
 import { NavLink, Route, Routes } from "react-router-dom";
 import IntervalQuizPage from "./pages/IntervalQuizPage";
 import FretboardPage from "./pages/FretboardPage";
+import FretboardNoteQuizPage from "./pages/FretboardNoteQuizPage";
 
 function TabLink({ to, label }: { to: string; label: string }) {
   return (
@@ -46,7 +47,8 @@ export default function App() {
         >
           <div style={{ fontWeight: 800, marginRight: 8 }}>Music Trainer</div>
           <TabLink to="/" label="Interval Quiz" />
-          <TabLink to="/fretboard" label="Fretboard" />
+          <TabLink to="/fretboard" label="Find Positions" />
+          <TabLink to="/name-quiz" label="Name the Note" />
         </div>
       </header>
 
@@ -54,6 +56,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<IntervalQuizPage />} />
           <Route path="/fretboard" element={<FretboardPage />} />
+          <Route path="/name-quiz" element={<FretboardNoteQuizPage />} />
         </Routes>
       </main>
     </div>
