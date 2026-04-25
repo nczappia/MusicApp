@@ -9,6 +9,7 @@ type Question = { id: string; rootMidi: number; interval: Interval };
 
 const LS_KEY = "enabledIntervalsSemitones_v1";
 const LS_INSTRUMENT = "intervalInstrument";
+const LS_VOLUME = "intervalVolume";
 const NOTE_MS = 650;
 const GAP_MS = 120;
 
@@ -85,6 +86,16 @@ export default function IntervalQuizPage() {
     return () => { cancelled = true; };
   }, [instrumentId]);
 
+  // ---------- Volume ----------
+  const [volume, setVolume] = useState<number>(() => {
+    const saved = parseFloat(localStorage.getItem(LS_VOLUME) ?? "");
+    return isNaN(saved) ? 1.0 : saved;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(LS_VOLUME, String(volume));
+  }, [volume]);
+
   // ---------- Enabled intervals ----------
   const [enabledSet, setEnabledSet] = useState<Set<number>>(() => {
     try {
@@ -154,11 +165,11 @@ export default function IntervalQuizPage() {
 
       playerRef.current.stop();
       const now = audioCtxRef.current!.currentTime;
-      playerRef.current.play(question.rootMidi, now, { duration: NOTE_MS / 1000, gain: 0.7 });
+      playerRef.current.play(question.rootMidi, now, { duration: NOTE_MS / 1000, gain: volume });
       playerRef.current.play(
         question.rootMidi + question.interval.semitones,
         now + (NOTE_MS + GAP_MS) / 1000,
-        { duration: NOTE_MS / 1000, gain: 0.7 }
+        { duration: NOTE_MS / 1000, gain: volume }
       );
 
       await sleep(NOTE_MS * 2 + GAP_MS + 100);
@@ -297,6 +308,23 @@ export default function IntervalQuizPage() {
           {instrumentLoading && (
             <div style={{ marginTop: 6, opacity: 0.65, fontSize: 13 }}>Loading instrument samples…</div>
           )}
+        </div>
+
+        {/* Volume slider */}
+        <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ fontWeight: 700, opacity: 0.9, whiteSpace: "nowrap" }}>Volume</div>
+          <input
+            type="range"
+            min={0}
+            max={1.5}
+            step={0.05}
+            value={volume}
+            onChange={(e) => setVolume(parseFloat(e.target.value))}
+            style={{ flex: 1, maxWidth: 220, accentColor: "rgba(80,160,255,0.9)" }}
+          />
+          <div style={{ opacity: 0.75, fontSize: 13, width: 36, textAlign: "right" }}>
+            {Math.round(volume * 100)}%
+          </div>
         </div>
 
         <div style={{ height: 1, background: "rgba(255,255,255,0.10)", margin: "14px 0" }} />
