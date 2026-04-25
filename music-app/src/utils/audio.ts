@@ -1,15 +1,13 @@
-// src/utils/audio.ts
 export type SynthOptions = {
   waveform?: OscillatorType;
   attackMs?: number;
   releaseMs?: number;
   noteMs?: number;
   gapMs?: number;
-  volume?: number; // 0..1
+  volume?: number;
 };
 
 function midiToFreq(midi: number): number {
-  // A4 = midi 69 = 440 Hz
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
@@ -19,9 +17,21 @@ function sleep(ms: number): Promise<void> {
 
 export class SimpleSynth {
   private ctx: AudioContext;
+  private activeOscs: Set<OscillatorNode> = new Set();
 
   constructor(ctx: AudioContext) {
     this.ctx = ctx;
+  }
+
+  stop(): void {
+    for (const osc of this.activeOscs) {
+      try { osc.stop(); } catch { /* already stopped */ }
+    }
+    this.activeOscs.clear();
+  }
+
+  async playMidi(midi: number, opts: SynthOptions = {}): Promise<void> {
+    return this.playFreq(midiToFreq(midi), opts);
   }
 
   async playTwoNotesAscending(
@@ -37,46 +47,66 @@ export class SimpleSynth {
       gapMs = 90,
       volume = 0.25,
     } = opts;
+    const noteOpts = { waveform, attackMs, releaseMs, noteMs, volume };
 
-    const first = midiToFreq(midiRoot);
-    const second = midiToFreq(midiRoot + semitonesUp);
-
-    await this.playNote(first, { waveform, attackMs, releaseMs, noteMs, volume });
+    await this.playFreq(midiToFreq(midiRoot), noteOpts);
     await sleep(gapMs);
-    await this.playNote(second, { waveform, attackMs, releaseMs, noteMs, volume });
+    await this.playFreq(midiToFreq(midiRoot + semitonesUp), noteOpts);
   }
 
-  private async playNote(
-    freq: number,
-    opts: Required<Pick<SynthOptions, "waveform" | "attackMs" | "releaseMs" | "noteMs" | "volume">>
-  ): Promise<void> {
+  playWrong(): void {
     const now = this.ctx.currentTime;
-
     const osc = this.ctx.createOscillator();
-    osc.type = opts.waveform;
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(200, now);
+    osc.frequency.exponentialRampToValueAtTime(80, now + 0.1);
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.28, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    this.activeOscs.add(osc);
+    osc.start(now);
+    osc.stop(now + 0.14);
+    osc.onended = () => this.activeOscs.delete(osc);
+  }
+
+  private async playFreq(freq: number, opts: SynthOptions = {}): Promise<void> {
+    const {
+      waveform = "sine",
+      attackMs = 10,
+      releaseMs = 80,
+      noteMs = 550,
+      volume = 0.25,
+    } = opts;
+
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    osc.type = waveform;
     osc.frequency.setValueAtTime(freq, now);
 
     const gain = this.ctx.createGain();
+    const attack = attackMs / 1000;
+    const hold = noteMs / 1000;
+    const release = releaseMs / 1000;
+
     gain.gain.setValueAtTime(0.0001, now);
-
-    const attack = opts.attackMs / 1000;
-    const hold = opts.noteMs / 1000;
-    const release = opts.releaseMs / 1000;
-
-    // ADSR-ish envelope
-    gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, opts.volume), now + attack);
-    gain.gain.setValueAtTime(Math.max(0.0001, opts.volume), now + hold);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume), now + attack);
+    gain.gain.setValueAtTime(Math.max(0.0001, volume), now + hold);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + hold + release);
 
     osc.connect(gain);
     gain.connect(this.ctx.destination);
 
+    this.activeOscs.add(osc);
     osc.start(now);
     osc.stop(now + hold + release + 0.02);
 
-    // Wait for note to finish
     await new Promise<void>((resolve) => {
-      osc.onended = () => resolve();
+      osc.onended = () => {
+        this.activeOscs.delete(osc);
+        resolve();
+      };
     });
   }
 }

@@ -12,17 +12,11 @@ type Question = {
 
 const LS_KEY = "enabledIntervalsSemitones_v1";
 
-/**
- * Creates a new question using ONLY the intervals that are enabled.
- */
 function makeQuestion(enabledIntervals: Interval[]): Question {
-  const rootMidi = randInt(48, 71);
-  const interval = pick(enabledIntervals);
-
   return {
     id: crypto.randomUUID(),
-    rootMidi,
-    interval,
+    rootMidi: randInt(48, 71),
+    interval: pick(enabledIntervals),
   };
 }
 
@@ -30,6 +24,7 @@ export default function IntervalQuizPage() {
   // ---------- Audio ----------
   const audioCtxRef = useRef<AudioContext | null>(null);
   const synthRef = useRef<SimpleSynth | null>(null);
+  const playIdRef = useRef(0);
 
   async function ensureAudio() {
     if (!audioCtxRef.current) {
@@ -43,11 +38,9 @@ export default function IntervalQuizPage() {
 
   useEffect(() => {
     return () => {
-      if (audioCtxRef.current) {
-        audioCtxRef.current.close().catch(() => {});
-        audioCtxRef.current = null;
-        synthRef.current = null;
-      }
+      audioCtxRef.current?.close().catch(() => {});
+      audioCtxRef.current = null;
+      synthRef.current = null;
     };
   }, []);
 
@@ -56,7 +49,6 @@ export default function IntervalQuizPage() {
     try {
       const raw = localStorage.getItem(LS_KEY);
       if (!raw) return new Set(ALL_INTERVALS.map((i) => i.semitones));
-
       const parsed = JSON.parse(raw) as number[];
       const valid = parsed.filter((n) => ALL_INTERVALS.some((i) => i.semitones === n));
       return new Set(valid.length ? valid : ALL_INTERVALS.map((i) => i.semitones));
@@ -70,15 +62,19 @@ export default function IntervalQuizPage() {
     localStorage.setItem(LS_KEY, JSON.stringify(arr));
   }, [enabledSet]);
 
-  const enabledIntervals = useMemo(() => {
-    return ALL_INTERVALS.filter((i) => enabledSet.has(i.semitones));
-  }, [enabledSet]);
+  const enabledIntervals = useMemo(
+    () => ALL_INTERVALS.filter((i) => enabledSet.has(i.semitones)),
+    [enabledSet]
+  );
 
   // ---------- Quiz state ----------
-  const [question, setQuestion] = useState<Question>(() => makeQuestion(ALL_INTERVALS));
+  // Initialize from the already-loaded enabledSet so the first question is always valid.
+  const [question, setQuestion] = useState<Question>(() => {
+    const init = ALL_INTERVALS.filter((i) => enabledSet.has(i.semitones));
+    return makeQuestion(init.length ? init : ALL_INTERVALS);
+  });
   const [hasPlayed, setHasPlayed] = useState(false);
   const [locked, setLocked] = useState(false);
-
   const [selected, setSelected] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<string>("");
   const [correct, setCorrect] = useState(0);
@@ -92,24 +88,24 @@ export default function IntervalQuizPage() {
       setSelected(null);
       setFeedback("");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabledSet]);
+  }, [enabledSet]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const accuracy = useMemo(() => {
-    if (total === 0) return 0;
-    return Math.round((correct / total) * 100);
-  }, [correct, total]);
+  const accuracy = useMemo(
+    () => (total === 0 ? 0 : Math.round((correct / total) * 100)),
+    [correct, total]
+  );
 
   async function playQuestion() {
     if (enabledIntervals.length === 0) {
       setFeedback("Enable at least one interval in Settings.");
       return;
     }
-
+    const id = ++playIdRef.current;
     try {
       setFeedback("");
       setLocked(true);
       await ensureAudio();
+      synthRef.current!.stop();
       await synthRef.current!.playTwoNotesAscending(question.rootMidi, question.interval.semitones, {
         waveform: "sine",
         noteMs: 550,
@@ -118,9 +114,9 @@ export default function IntervalQuizPage() {
         releaseMs: 90,
         volume: 0.25,
       });
-      setHasPlayed(true);
+      if (id === playIdRef.current) setHasPlayed(true);
     } finally {
-      setLocked(false);
+      if (id === playIdRef.current) setLocked(false);
     }
   }
 
@@ -132,7 +128,6 @@ export default function IntervalQuizPage() {
     if (selected !== null) return;
 
     setSelected(semitones);
-
     const isCorrect = semitones === question.interval.semitones;
     setTotal((t) => t + 1);
 
@@ -153,6 +148,8 @@ export default function IntervalQuizPage() {
       setFeedback("Enable at least one interval in Settings.");
       return;
     }
+    playIdRef.current++;
+    synthRef.current?.stop();
     setQuestion(makeQuestion(enabledIntervals));
     setHasPlayed(false);
     setSelected(null);
@@ -160,6 +157,8 @@ export default function IntervalQuizPage() {
   }
 
   function resetScore() {
+    playIdRef.current++;
+    synthRef.current?.stop();
     setCorrect(0);
     setTotal(0);
     setStreak(0);
@@ -174,7 +173,6 @@ export default function IntervalQuizPage() {
     setEnabledSet((prev) => {
       const next = new Set(prev);
       if (next.has(semitones)) {
-        // keep your current guardrail for now; we can remove later if you want
         if (next.size === 1) return next;
         next.delete(semitones);
       } else {
@@ -191,8 +189,6 @@ export default function IntervalQuizPage() {
   function enableOnlyCommon() {
     setEnabledSet(new Set([0, 3, 4, 5, 7, 12]));
   }
-
-  const answerChoices = enabledIntervals;
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "2rem 1rem" }}>
@@ -228,7 +224,7 @@ export default function IntervalQuizPage() {
           <button onClick={enableAll} disabled={locked}>Enable all</button>
           <button onClick={enableOnlyCommon} disabled={locked}>Common set</button>
           <div style={{ opacity: 0.75, alignSelf: "center" }}>
-            (You can’t disable the last remaining interval.)
+            (You can't disable the last remaining interval.)
           </div>
         </div>
 
@@ -243,7 +239,6 @@ export default function IntervalQuizPage() {
           {ALL_INTERVALS.map((i) => {
             const enabled = enabledSet.has(i.semitones);
             const disabledBecauseLast = enabled && enabledSet.size === 1;
-
             return (
               <label
                 key={i.semitones}
@@ -293,14 +288,13 @@ export default function IntervalQuizPage() {
             marginTop: 10,
           }}
         >
-          {answerChoices.map((i) => {
+          {enabledIntervals.map((i) => {
             const isPicked = selected === i.semitones;
             const isRight = selected !== null && i.semitones === question.interval.semitones;
             const showRight = selected !== null;
 
             let border = "1px solid rgba(255,255,255,0.18)";
             let opacity = 1;
-
             if (showRight) {
               if (isRight) border = "2px solid rgba(0, 255, 160, 0.75)";
               else if (isPicked) border = "2px solid rgba(255, 80, 80, 0.75)";
@@ -336,8 +330,8 @@ export default function IntervalQuizPage() {
       )}
 
       <div style={{ marginTop: 18, opacity: 0.75, fontSize: 13 }}>
-        Tip: next upgrades are easy now — e.g., “4-choice mode”, descending intervals, harmonic intervals,
-        or “keep the same root note” to remove pitch distraction.
+        Tip: next upgrades are easy now — e.g., "4-choice mode", descending intervals, harmonic intervals,
+        or "keep the same root note" to remove pitch distraction.
       </div>
     </div>
   );
