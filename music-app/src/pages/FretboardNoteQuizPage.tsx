@@ -3,7 +3,7 @@ import FretboardDisplay from "../components/FretboardDisplay";
 import type { FretboardHighlight } from "../components/FretboardDisplay";
 import { SimpleSynth } from "../utils/audio";
 import {
-  OPEN_STRING_MIDI, MAX_FRET, NOTE_NAMES, STRING_LABELS,
+  OPEN_STRING_MIDI, MAX_FRET, NOTE_ENTRIES, STRING_LABELS,
   midiToNoteName, midiToNameOct,
 } from "../utils/fretboard";
 
@@ -108,7 +108,8 @@ export default function FretboardNoteQuizPage() {
   function handleAnswer(note: string) {
     if (locked || chosen !== null) return;
     const current = questions[qIndex];
-    const correct = note === current.noteName;
+    const chosenSemitone = NOTE_ENTRIES.find((e) => e.display === note)?.semitone;
+    const correct = chosenSemitone === current.midi % 12;
 
     setChosen(note);
     setLocked(true);
@@ -364,9 +365,9 @@ export default function FretboardNoteQuizPage() {
           maxWidth: 560,
         }}
       >
-        {NOTE_NAMES.map((note) => {
-          const isPicked = chosen === note;
-          const isAnswer = note === current.noteName;
+        {NOTE_ENTRIES.map(({ display, semitone }) => {
+          const isPicked = chosen === display;
+          const isAnswer = semitone === current.midi % 12;
           const revealed = chosen !== null;
 
           let border = "1px solid rgba(255,255,255,0.18)";
@@ -379,8 +380,8 @@ export default function FretboardNoteQuizPage() {
 
           return (
             <button
-              key={note}
-              onClick={() => handleAnswer(note)}
+              key={display}
+              onClick={() => handleAnswer(display)}
               disabled={locked}
               style={{
                 padding: "0.9rem 0.4rem",
@@ -388,13 +389,13 @@ export default function FretboardNoteQuizPage() {
                 border,
                 background: bg,
                 color: "inherit",
-                fontSize: 16,
+                fontSize: 14,
                 fontWeight: 700,
                 cursor: locked ? "not-allowed" : "pointer",
                 transition: "border 0.08s, background 0.08s",
               }}
             >
-              {note}
+              {display}
             </button>
           );
         })}

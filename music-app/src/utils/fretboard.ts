@@ -6,7 +6,26 @@ export const STRING_WIDTHS = [1, 1.2, 1.5, 2.3, 3.1, 4]; // high e → low E
 export const STRING_LABELS = ["e", "B", "G", "D", "A", "E"]; // high → low
 export const MAX_FRET = 23;
 export const NUM_COLS = MAX_FRET + 1;
-export const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+// Sharp names kept for midiToNameOct (e.g. "F#4")
+const NOTE_NAMES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+export type NoteEntry = { display: string; semitone: number };
+
+// Ordered A→G# with enharmonic display; semitone 0 = C
+export const NOTE_ENTRIES: NoteEntry[] = [
+  { display: "A",      semitone: 9  },
+  { display: "A#/Bb",  semitone: 10 },
+  { display: "B",      semitone: 11 },
+  { display: "C",      semitone: 0  },
+  { display: "C#/Db",  semitone: 1  },
+  { display: "D",      semitone: 2  },
+  { display: "D#/Eb",  semitone: 3  },
+  { display: "E",      semitone: 4  },
+  { display: "F",      semitone: 5  },
+  { display: "F#/Gb",  semitone: 6  },
+  { display: "G",      semitone: 7  },
+  { display: "G#/Ab",  semitone: 8  },
+];
 export const MARKER_SINGLE = [3, 5, 7, 9, 15, 17, 19, 21];
 export const MARKER_DOUBLE = [12];
 
@@ -24,11 +43,11 @@ export const frets = Array.from({ length: NUM_COLS }, (_, i) => i);
 export const stringRanges = OPEN_STRING_MIDI.map((open) => ({ min: open, max: open + MAX_FRET }));
 
 export function midiToNoteName(midi: number): string {
-  return NOTE_NAMES[midi % 12];
+  return NOTE_ENTRIES.find((e) => e.semitone === midi % 12)!.display;
 }
 
 export function midiToNameOct(midi: number): string {
-  return `${NOTE_NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
+  return `${NOTE_NAMES_SHARP[midi % 12]}${Math.floor(midi / 12) - 1}`;
 }
 
 export function clamp(n: number, lo: number, hi: number): number {
