@@ -7,6 +7,12 @@ const QUIZZES = [
     tag: "Melodic · Ascending",
     desc: "Two notes play in sequence. Identify the interval between them — from unison to octave. Choose which intervals to practice, pick an instrument (piano, guitar, violin, and more), and adjust volume. Tracks score and streak.",
   },
+  {
+    to: "/ear-training/chords",
+    title: "Chord Quiz",
+    tag: "Harmonic · Root Position",
+    desc: "A chord plays from a random root. Identify it by type — triads, suspended, or sevenths. Choose harmonic or arpeggiated playback, configure which chords to include, and pick your instrument. Tracks score and streak.",
+  },
 ];
 
 export default function EarTrainingSectionPage() {

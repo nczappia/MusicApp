@@ -31,6 +31,10 @@ const SECTIONS = [
         name: "Interval Quiz",
         desc: "Two notes play in sequence. Identify the interval between them. Choose your instrument and which intervals to practice.",
       },
+      {
+        name: "Chord Quiz",
+        desc: "A chord plays from a random root. Identify it by type — triads, suspended, or sevenths. Harmonic or arpeggiated playback.",
+      },
     ],
   },
 ];
