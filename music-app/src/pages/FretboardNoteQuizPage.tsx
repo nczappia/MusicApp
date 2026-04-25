@@ -339,20 +339,6 @@ export default function FretboardNoteQuizPage() {
         <div style={{ height: "100%", width: `${progress * 100}%`, background: "rgba(80,160,255,0.7)", borderRadius: 999, transition: "width 0.3s" }} />
       </div>
 
-      {/* Question prompt */}
-      <div
-        style={{
-          marginBottom: 14,
-          padding: "0.85rem 1rem",
-          borderRadius: 12,
-          background: "rgba(255,255,255,0.06)",
-          border: "1px solid rgba(255,255,255,0.12)",
-          fontSize: 15,
-        }}
-      >
-        What note is highlighted on the <b>{STRING_LABELS[current.stringIdx]}</b> string at fret <b>{current.fret}</b>?
-      </div>
-
       <FretboardDisplay highlights={[highlight]} cursor="default" />
 
       {/* 12 note buttons — 6 per row */}
