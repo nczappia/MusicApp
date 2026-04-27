@@ -15,9 +15,11 @@ type Props = {
   cursor?: string;
 };
 
-// Vertical space between outermost strings and fretboard edge
-const VTOP = 12;
-const VBOT = 12;
+// Vertical space between outermost strings and fretboard edge.
+// Real guitars: edge clearance ≈ 48% of inter-string spacing.
+// PITCH=31px → target 15px edge-to-string-centre; ROW_HEIGHT/2=13 is built in, so VTOP=2.
+const VTOP = 2;
+const VBOT = 2;
 const STRINGS_H = ROW_HEIGHT * 6 + ROW_GAP * 5;
 const BOARD_H = VTOP + STRINGS_H + VBOT;
 
