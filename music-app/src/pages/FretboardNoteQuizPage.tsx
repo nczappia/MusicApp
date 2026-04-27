@@ -24,7 +24,7 @@ type Screen = "config" | "quiz" | "results";
 
 const PRESET_COUNTS = [5, 10, 20];
 
-function generateQuestions(n: number): NoteQuestion[] {
+function generateQuestions(n: number, maxFret: number): NoteQuestion[] {
   const used = new Set<string>();
   const out: NoteQuestion[] = [];
   for (let i = 0; i < n; i++) {
@@ -32,7 +32,7 @@ function generateQuestions(n: number): NoteQuestion[] {
     let attempts = 0;
     do {
       stringIdx = Math.floor(Math.random() * 6);
-      fret = Math.floor(Math.random() * (MAX_FRET + 1));
+      fret = Math.floor(Math.random() * (maxFret + 1));
       key = `${stringIdx}:${fret}`;
       attempts++;
     } while (used.has(key) && attempts < 100);
@@ -54,6 +54,7 @@ export default function FretboardNoteQuizPage() {
   const [screen, setScreen] = useState<Screen>("config");
   const [totalQ, setTotalQ] = useState(10);
   const [customInput, setCustomInput] = useState("");
+  const [halfNeck, setHalfNeck] = useState(() => localStorage.getItem("nqHalfNeck") === "true");
 
   // Quiz state
   const [questions, setQuestions] = useState<NoteQuestion[]>([]);
@@ -93,7 +94,8 @@ export default function FretboardNoteQuizPage() {
   }, [screen, startTime]);
 
   function startQuiz() {
-    const q = generateQuestions(totalQ);
+    localStorage.setItem("nqHalfNeck", String(halfNeck));
+    const q = generateQuestions(totalQ, halfNeck ? 12 : MAX_FRET);
     setQuestions(q);
     setQIndex(0);
     setAnswers([]);
@@ -195,6 +197,33 @@ export default function FretboardNoteQuizPage() {
           </div>
           <div style={{ marginTop: 8, opacity: 0.6, fontSize: 13 }}>
             {totalQ} question{totalQ !== 1 ? "s" : ""} · answers auto-advance after 700 ms
+          </div>
+        </div>
+
+        <div style={{ marginTop: "1.5rem" }}>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>Fret range</div>
+          <div style={{ display: "flex", gap: 10 }}>
+            {([false, true] as const).map((half) => {
+              const active = halfNeck === half;
+              return (
+                <button
+                  key={String(half)}
+                  onClick={() => setHalfNeck(half)}
+                  style={{
+                    padding: "0.65rem 1.3rem",
+                    borderRadius: 10,
+                    border: active ? "2px solid rgba(80,160,255,0.8)" : "1px solid rgba(255,255,255,0.18)",
+                    background: active ? "rgba(80,160,255,0.12)" : "rgba(255,255,255,0.05)",
+                    color: "inherit",
+                    cursor: "pointer",
+                    fontWeight: active ? 700 : 400,
+                    fontSize: 15,
+                  }}
+                >
+                  {half ? "First 12 frets" : "All frets (0–23)"}
+                </button>
+              );
+            })}
           </div>
         </div>
 
