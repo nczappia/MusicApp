@@ -20,6 +20,20 @@ const SECTIONS = [
     ],
   },
   {
+    to: "/piano",
+    icon: "🎹",
+    title: "Piano",
+    tagline: "Keyboard chord recognition.",
+    accent: "rgba(180,100,255,0.08)",
+    border: "rgba(180,100,255,0.28)",
+    quizzes: [
+      {
+        name: "Chord Recognition",
+        desc: "Notes are highlighted on a 3-octave keyboard. Identify the root and chord type from the visual pattern. Timed with configurable chord sets.",
+      },
+    ],
+  },
+  {
     to: "/ear-training",
     icon: "🎵",
     title: "Ear Training",
