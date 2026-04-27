@@ -16,20 +16,22 @@ type Props = {
 };
 
 // Vertical space between outermost strings and fretboard edge
-const VTOP = 20;
-const VBOT = 20;
+const VTOP = 12;
+const VBOT = 12;
 const STRINGS_H = ROW_HEIGHT * 6 + ROW_GAP * 5;
 const BOARD_H = VTOP + STRINGS_H + VBOT;
 
+const INLAY_DOT = 14; // px diameter
+
 // Inlay dot Y positions relative to board top (centred within string span)
-const INLAY_SINGLE_Y = VTOP + STRINGS_H / 2 - 10;
-const INLAY_DOUBLE_Y1 = VTOP + STRINGS_H / 3 - 10;
-const INLAY_DOUBLE_Y2 = VTOP + (STRINGS_H * 2) / 3 - 10;
+const INLAY_SINGLE_Y = VTOP + STRINGS_H / 2 - INLAY_DOT / 2;
+const INLAY_DOUBLE_Y1 = VTOP + STRINGS_H / 3 - INLAY_DOT / 2;
+const INLAY_DOUBLE_Y2 = VTOP + (STRINGS_H * 2) / 3 - INLAY_DOT / 2;
 
 const INLAY_STYLE: React.CSSProperties = {
   position: "absolute",
-  width: 20,
-  height: 20,
+  width: INLAY_DOT,
+  height: INLAY_DOT,
   borderRadius: 999,
   left: "50%",
   transform: "translateX(-50%)",
@@ -175,9 +177,9 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
                   bottom: 0,
                   width: 5,
                   transform: "translateX(-2.5px)",
-                  background: "linear-gradient(90deg, rgba(110,95,55,0.4) 0%, rgba(205,188,132,0.92) 22%, rgba(235,218,158,1) 50%, rgba(202,185,130,0.91) 78%, rgba(108,93,53,0.38) 100%)",
+                  background: "linear-gradient(90deg, rgba(80,85,100,0.35) 0%, rgba(185,190,208,0.88) 15%, rgba(238,240,250,1) 34%, rgba(255,255,255,1) 50%, rgba(235,238,250,1) 66%, rgba(183,188,206,0.86) 85%, rgba(78,83,98,0.33) 100%)",
                   borderRadius: 2,
-                  boxShadow: "0 0 3px rgba(0,0,0,0.55), 0 1px 1px rgba(255,240,180,0.12) inset",
+                  boxShadow: "0 0 4px rgba(0,0,0,0.6), 0 0 2px rgba(255,255,255,0.35) inset",
                 }} />
               ))}
             </div>

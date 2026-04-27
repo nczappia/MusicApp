@@ -29,8 +29,8 @@ export const NOTE_ENTRIES: NoteEntry[] = [
 export const MARKER_SINGLE = [3, 5, 7, 9, 15, 17, 19, 21];
 export const MARKER_DOUBLE = [12];
 
-export const ROW_HEIGHT = 40;
-export const ROW_GAP = 12;
+export const ROW_HEIGHT = 26;
+export const ROW_GAP = 5;
 export const PITCH = ROW_HEIGHT + ROW_GAP;
 export const INSET = 14;
 
