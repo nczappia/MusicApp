@@ -298,7 +298,7 @@ export default function ChordQuizPage() {
     : "Play";
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "2rem 1rem" }}>
+    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "2rem 1rem" }}>
       <h1>Chord Ear Trainer</h1>
       <p style={{ opacity: 0.85 }}>
         A chord plays from a random root (C3–B3). Identify it. Use <b>Settings</b> to choose chords, instrument, and play style.

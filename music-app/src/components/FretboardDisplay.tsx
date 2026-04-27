@@ -111,7 +111,7 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
   return (
     /* Scroll wrapper: fret numbers + board scroll together */
     <div style={{ overflowX: "auto" }}>
-      <div style={{ minWidth: 1400 }}>
+      <div style={{ minWidth: 1900 }}>
 
         {/* Fret numbers */}
         <div style={{
@@ -144,9 +144,10 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
             borderRadius: 7,
             overflow: "hidden",
             background: [
-              "repeating-linear-gradient(92deg, transparent 0px, transparent 38px, rgba(0,0,0,0.065) 39px, rgba(0,0,0,0.065) 40px, transparent 41px, transparent 78px)",
-              "repeating-linear-gradient(180deg, rgba(255,255,255,0.022) 0px, transparent 3px, transparent 10px, rgba(0,0,0,0.028) 11px, rgba(0,0,0,0.028) 12px, transparent 13px, transparent 28px)",
-              "linear-gradient(180deg, #5E2A10 0%, #3C1908 22%, #502210 48%, #3C1908 72%, #4C2010 100%)",
+              // subtle left-to-right: slightly lighter near nut, natural vignette toward body
+              "linear-gradient(90deg, rgba(255,180,80,0.06) 0%, transparent 18%, transparent 82%, rgba(0,0,0,0.12) 100%)",
+              // base rosewood
+              "linear-gradient(180deg, #5C2810 0%, #3A1808 20%, #4E2210 45%, #3A1808 70%, #4A2010 100%)",
             ].join(", "),
             boxShadow: "0 0 0 1px rgba(0,0,0,0.65) inset",
           }}>
@@ -174,9 +175,9 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
                   bottom: 0,
                   width: 5,
                   transform: "translateX(-2.5px)",
-                  background: "linear-gradient(90deg, rgba(120,125,145,0.45) 0%, rgba(210,214,228,0.93) 22%, rgba(245,247,255,1) 50%, rgba(208,212,226,0.92) 78%, rgba(118,123,142,0.42) 100%)",
+                  background: "linear-gradient(90deg, rgba(110,95,55,0.4) 0%, rgba(205,188,132,0.92) 22%, rgba(235,218,158,1) 50%, rgba(202,185,130,0.91) 78%, rgba(108,93,53,0.38) 100%)",
                   borderRadius: 2,
-                  boxShadow: "0 0 2px rgba(0,0,0,0.5), 0 1px 1px rgba(255,255,255,0.14) inset",
+                  boxShadow: "0 0 3px rgba(0,0,0,0.55), 0 1px 1px rgba(255,240,180,0.12) inset",
                 }} />
               ))}
             </div>

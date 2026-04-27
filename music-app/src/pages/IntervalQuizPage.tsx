@@ -251,7 +251,7 @@ export default function IntervalQuizPage() {
     : "Play";
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "2rem 1rem" }}>
+    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "2rem 1rem" }}>
       <h1>Interval Ear Trainer</h1>
       <p style={{ opacity: 0.85 }}>
         Ascending melodic intervals only. Use <b>Settings</b> to choose intervals and instrument.

@@ -89,7 +89,7 @@ export default function FretboardPage() {
   ];
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "2rem 1rem" }}>
+    <div style={{ maxWidth: 1500, margin: "0 auto", padding: "2rem 1rem" }}>
       <h1>Fretboard Quiz</h1>
 
       <div

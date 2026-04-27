@@ -45,7 +45,7 @@ const SECTIONS = [
 
 export default function HomePage() {
   return (
-    <div style={{ maxWidth: 860, margin: "0 auto", padding: "3rem 1rem" }}>
+    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "3rem 1rem" }}>
       <div style={{ marginBottom: "2.5rem" }}>
         <h1 style={{ fontSize: 30, margin: 0 }}>Welcome to Music Trainer</h1>
         <p style={{ opacity: 0.65, marginTop: 8, fontSize: 15 }}>

@@ -329,7 +329,7 @@ export default function ChordInversionQuizPage() {
   const inversionCount = question.chord.intervals.length;
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "2rem 1rem" }}>
+    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "2rem 1rem" }}>
       <h1>Chord Inversion Quiz</h1>
       <p style={{ opacity: 0.85 }}>
         {difficulty === "beginner"

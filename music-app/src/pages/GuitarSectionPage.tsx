@@ -17,7 +17,7 @@ const QUIZZES = [
 
 export default function GuitarSectionPage() {
   return (
-    <div style={{ maxWidth: 860, margin: "0 auto", padding: "2rem 1rem" }}>
+    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "2rem 1rem" }}>
       <Breadcrumb label="Guitar" />
       <h1 style={{ margin: "0.4rem 0 0.25rem" }}>🎸 Guitar</h1>
       <p style={{ opacity: 0.6, marginTop: 4, marginBottom: "2rem", fontSize: 15 }}>

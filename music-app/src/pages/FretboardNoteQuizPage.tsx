@@ -141,7 +141,7 @@ export default function FretboardNoteQuizPage() {
 
   if (screen === "config") {
     return (
-      <div style={{ maxWidth: 560, margin: "0 auto", padding: "2rem 1rem" }}>
+      <div style={{ maxWidth: 760, margin: "0 auto", padding: "2rem 1rem" }}>
         <h1>Name the Note</h1>
         <p style={{ opacity: 0.85 }}>
           A fret position is highlighted on the neck. Identify the note name as fast as you can.
@@ -225,7 +225,7 @@ export default function FretboardNoteQuizPage() {
     const accuracy = Math.round((correctCount / answers.length) * 100);
 
     return (
-      <div style={{ maxWidth: 820, margin: "0 auto", padding: "2rem 1rem" }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "2rem 1rem" }}>
         <h1>Quiz Complete</h1>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, margin: "1.5rem 0" }}>
@@ -317,7 +317,7 @@ export default function FretboardNoteQuizPage() {
   };
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "2rem 1rem" }}>
+    <div style={{ maxWidth: 1500, margin: "0 auto", padding: "2rem 1rem" }}>
       {/* Header row */}
       <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 14 }}>
         <h1 style={{ margin: 0 }}>Name the Note</h1>
