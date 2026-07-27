@@ -9,6 +9,8 @@ import ChordQuizPage from "./pages/ChordQuizPage";
 import ChordInversionQuizPage from "./pages/ChordInversionQuizPage";
 import PianoSectionPage from "./pages/PianoSectionPage";
 import PianoChordQuizPage from "./pages/PianoChordQuizPage";
+import SightReadingSectionPage from "./pages/SightReadingSectionPage";
+import NoteReadingQuizPage from "./pages/NoteReadingQuizPage";
 
 function SectionTab({ to, label }: { to: string; label: string }) {
   return (
@@ -72,6 +74,7 @@ export default function App() {
           <SectionTab to="/guitar" label="🎸 Guitar" />
           <SectionTab to="/piano" label="🎹 Piano" />
           <SectionTab to="/ear-training" label="🎵 Ear Training" />
+          <SectionTab to="/sight-reading" label="📄 Sight Reading" />
         </div>
       </header>
 
@@ -90,6 +93,9 @@ export default function App() {
           <Route path="/ear-training/intervals" element={<IntervalQuizPage />} />
           <Route path="/ear-training/chords" element={<ChordQuizPage />} />
           <Route path="/ear-training/chord-inversions" element={<ChordInversionQuizPage />} />
+
+          <Route path="/sight-reading" element={<SightReadingSectionPage />} />
+          <Route path="/sight-reading/note-reading" element={<NoteReadingQuizPage />} />
         </Routes>
       </main>
     </div>

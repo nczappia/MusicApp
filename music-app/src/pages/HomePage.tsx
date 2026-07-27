@@ -34,6 +34,20 @@ const SECTIONS = [
     ],
   },
   {
+    to: "/sight-reading",
+    icon: "📄",
+    title: "Sight Reading",
+    tagline: "Read musical notation.",
+    accent: "rgba(80,220,160,0.07)",
+    border: "rgba(80,220,160,0.25)",
+    quizzes: [
+      {
+        name: "Note Reading",
+        desc: "A note appears on the treble or bass clef staff. Name it. Includes optional ledger lines above and below the staff.",
+      },
+    ],
+  },
+  {
     to: "/ear-training",
     icon: "🎵",
     title: "Ear Training",
