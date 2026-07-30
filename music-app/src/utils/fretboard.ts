@@ -32,7 +32,6 @@ export const MARKER_DOUBLE = [12];
 export const ROW_HEIGHT = 26;
 export const ROW_GAP = 5;
 export const PITCH = ROW_HEIGHT + ROW_GAP;
-export const INSET = 14;
 
 const MIN_COL_PX = 18;
 const OPEN_FACTOR = 0.22;
@@ -40,7 +39,6 @@ const GAMMA = 1.15;
 
 export const strings = Array.from({ length: 6 }, (_, i) => i);
 export const frets = Array.from({ length: NUM_COLS }, (_, i) => i);
-export const stringRanges = OPEN_STRING_MIDI.map((open) => ({ min: open, max: open + MAX_FRET }));
 
 export function midiToNoteName(midi: number): string {
   return NOTE_ENTRIES.find((e) => e.semitone === midi % 12)!.display;
@@ -68,13 +66,15 @@ const _shaped = _raw.map((x) => Math.pow(x, GAMMA));
 export const colWeights: number[] = [_shaped[0] * OPEN_FACTOR, ..._shaped];
 const _colWeightSum = colWeights.reduce((a, b) => a + b, 0);
 
-export function allocateWidths(totalW: number): { w: number[]; b: number[] } {
-  const n = NUM_COLS;
+export function allocateWidths(totalW: number, numCols: number = NUM_COLS): { w: number[]; b: number[] } {
+  const n = numCols;
+  const weights = colWeights.slice(0, n);
+  const weightSum = n === NUM_COLS ? _colWeightSum : weights.reduce((a, b) => a + b, 0);
   const minTotal = n * MIN_COL_PX;
   const w: number[] = Array(n).fill(MIN_COL_PX);
   if (totalW > minTotal + 1) {
     const remaining = totalW - minTotal;
-    for (let i = 0; i < n; i++) w[i] += (colWeights[i] / _colWeightSum) * remaining;
+    for (let i = 0; i < n; i++) w[i] += (weights[i] / weightSum) * remaining;
   } else {
     const eq = totalW / n;
     for (let i = 0; i < n; i++) w[i] = eq;

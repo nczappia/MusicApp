@@ -11,10 +11,6 @@ function midiToFreq(midi: number): number {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
 export class SimpleSynth {
   private ctx: AudioContext;
   private activeOscs: Set<OscillatorNode> = new Set();
@@ -32,26 +28,6 @@ export class SimpleSynth {
 
   async playMidi(midi: number, opts: SynthOptions = {}): Promise<void> {
     return this.playFreq(midiToFreq(midi), opts);
-  }
-
-  async playTwoNotesAscending(
-    midiRoot: number,
-    semitonesUp: number,
-    opts: SynthOptions = {}
-  ): Promise<void> {
-    const {
-      waveform = "sine",
-      attackMs = 10,
-      releaseMs = 80,
-      noteMs = 550,
-      gapMs = 90,
-      volume = 0.25,
-    } = opts;
-    const noteOpts = { waveform, attackMs, releaseMs, noteMs, volume };
-
-    await this.playFreq(midiToFreq(midiRoot), noteOpts);
-    await sleep(gapMs);
-    await this.playFreq(midiToFreq(midiRoot + semitonesUp), noteOpts);
   }
 
   playWrong(): void {

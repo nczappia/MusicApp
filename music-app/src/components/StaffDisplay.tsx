@@ -1,5 +1,6 @@
 import type { StaffNote } from "../utils/staffNotes";
 import { ledgerLines } from "../utils/staffNotes";
+import { white } from "../utils/theme";
 
 type Props = {
   note: StaffNote;
@@ -24,39 +25,53 @@ const LEDGER_HALF = 18; // half-width of ledger line
 const NOTE_R = 9;       // note head radius (slightly squashed)
 const NOTE_RY = 7;
 
-// Treble clef symbol via SVG path (simplified drawn with lines/arcs)
-// We'll use a text glyph approach with a unicode character scaled via transform
+// Clefs are drawn as hand-built SVG paths (not the Unicode glyphs U+1D11E/U+1D122)
+// because serif fonts on Linux/Android have no coverage for the Musical Symbols
+// block and render them as empty boxes. Paths are plotted directly in the staff's
+// coordinate space (STAFF_LEFT/STAFF_TOP/LINE_GAP) so they stay aligned with the lines.
 function TrebleClef() {
   return (
-    <text
-      x={STAFF_LEFT - 6}
-      y={stepToY(2) + 4}
-      fontSize={72}
-      fontFamily="serif"
-      fill="currentColor"
-      style={{ userSelect: "none" }}
-      textAnchor="middle"
-    >
-      𝄞
-    </text>
+    <path
+      d="
+        M 70 4
+        C 58 -2 46 6 48 16
+        C 50 26 64 28 68 18
+        C 71 10 62 6 58 12
+        C 54 18 58 26 64 30
+        C 80 42 96 50 96 66
+        C 96 84 74 92 60 82
+        C 48 74 52 62 62 60
+        C 72 58 78 68 74 76
+        C 68 90 44 88 40 106
+        C 37 120 50 130 60 122
+        C 68 116 64 106 54 106
+      "
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={4}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
   );
 }
 
 function BassClef() {
-  const y = stepToY(6);
   return (
-    <g>
-      <text
-        x={STAFF_LEFT - 4}
-        y={y + 6}
-        fontSize={46}
-        fontFamily="serif"
-        fill="currentColor"
-        style={{ userSelect: "none" }}
-        textAnchor="middle"
-      >
-        𝄢
-      </text>
+    <g stroke="currentColor" fill="currentColor">
+      <path
+        d="
+          M 28 24
+          C 46 16 66 22 70 36
+          C 74 50 66 64 50 70
+          C 40 74 28 70 26 62
+        "
+        fill="none"
+        strokeWidth={4.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx={78} cy={37} r={3.4} stroke="none" />
+      <circle cx={78} cy={51} r={3.4} stroke="none" />
     </g>
   );
 }
@@ -77,9 +92,9 @@ export default function StaffDisplay({ note, revealed = false }: Props) {
   return (
     <svg
       viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-      width={SVG_W}
-      height={SVG_H}
-      style={{ display: "block", overflow: "visible" }}
+      role="img"
+      aria-label={revealed ? `${note.label} on ${note.clef} clef` : `Note on ${note.clef} clef — identify it`}
+      style={{ display: "block", overflow: "visible", width: "100%", height: "auto" }}
     >
       {/* Staff lines */}
       {staffLines.map((s) => (
@@ -89,7 +104,7 @@ export default function StaffDisplay({ note, revealed = false }: Props) {
           x2={STAFF_RIGHT}
           y1={stepToY(s)}
           y2={stepToY(s)}
-          stroke="rgba(255,255,255,0.55)"
+          stroke={white(0.55)}
           strokeWidth={1.2}
         />
       ))}
@@ -107,7 +122,7 @@ export default function StaffDisplay({ note, revealed = false }: Props) {
             x2={STAFF_LEFT + 110 + LEDGER_HALF}
             y1={ly}
             y2={ly}
-            stroke="rgba(255,255,255,0.55)"
+            stroke={white(0.55)}
             strokeWidth={1.2}
           />
         );

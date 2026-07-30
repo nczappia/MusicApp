@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { instrument as loadSoundfont } from "soundfont-player";
-import type { Player } from "soundfont-player";
-import "../App.css";
+import { useEffect, useState } from "react";
 import { ALL_CHORDS, CHORD_GROUPS, CHORD_PRESETS, pickChord } from "../utils/chords";
-import type { ChordGroup, ChordType } from "../utils/chords";
+import type { ChordType } from "../utils/chords";
+import { useSoundfontInstrument } from "../hooks/useSoundfontInstrument";
+import { useLocalStorageState } from "../hooks/useLocalStorageState";
+import { useEnabledChords } from "../hooks/useEnabledChords";
+import { useQuizScore } from "../hooks/useQuizScore";
+import InstrumentControls from "../components/InstrumentControls";
+import { black, blue, white } from "../utils/theme";
 
 type Question = { id: string; rootMidi: number; chord: ChordType };
 
@@ -14,19 +17,6 @@ const LS_PLAY_MODE = "chordPlayMode";
 const CHORD_MS = 1800;
 const ARPEG_GAP_MS = 120;
 
-const INSTRUMENTS: { id: string; label: string }[] = [
-  { id: "acoustic_grand_piano",  label: "Piano" },
-  { id: "electric_piano_1",      label: "Electric Piano" },
-  { id: "acoustic_guitar_nylon", label: "Nylon Guitar" },
-  { id: "acoustic_guitar_steel", label: "Steel Guitar" },
-  { id: "electric_guitar_clean", label: "Electric Guitar" },
-  { id: "violin",                label: "Violin" },
-  { id: "flute",                 label: "Flute" },
-  { id: "marimba",               label: "Marimba" },
-];
-
-const DEFAULT_IDS = CHORD_PRESETS.find((p) => p.label === "Basics")!.ids;
-
 function makeQuestion(chords: ChordType[]): Question {
   return {
     id: crypto.randomUUID(),
@@ -35,106 +25,20 @@ function makeQuestion(chords: ChordType[]): Question {
   };
 }
 
-function sleep(ms: number) {
-  return new Promise<void>((r) => setTimeout(r, ms));
-}
-
-function loadEnabledSet(): Set<string> {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return new Set(DEFAULT_IDS);
-    const parsed = JSON.parse(raw) as string[];
-    const valid = parsed.filter((id) => ALL_CHORDS.some((c) => c.id === id));
-    return new Set(valid.length ? valid : DEFAULT_IDS);
-  } catch {
-    return new Set(DEFAULT_IDS);
-  }
-}
-
 export default function ChordQuizPage() {
-  // ---------- Audio ----------
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const playerRef = useRef<Player | null>(null);
-  const playIdRef = useRef(0);
-  const [instrumentLoading, setInstrumentLoading] = useState(false);
-
-  async function ensureAudio(instrumentId: string) {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new AudioContext();
-      setInstrumentLoading(true);
-      try {
-        playerRef.current = await loadSoundfont(audioCtxRef.current, instrumentId, { soundfont: "MusyngKite" });
-      } catch {
-        // CDN unavailable — player stays null, caught in playQuestion
-      } finally {
-        setInstrumentLoading(false);
-      }
-    }
-    if (audioCtxRef.current.state === "suspended") {
-      await audioCtxRef.current.resume();
-    }
-  }
-
-  useEffect(() => {
-    return () => {
-      audioCtxRef.current?.close().catch(() => {});
-      audioCtxRef.current = null;
-      playerRef.current = null;
-    };
-  }, []);
-
-  // ---------- Instrument ----------
-  const [instrumentId, setInstrumentId] = useState<string>(
-    () => localStorage.getItem(LS_INSTRUMENT) ?? "acoustic_grand_piano"
-  );
-
-  useEffect(() => {
-    localStorage.setItem(LS_INSTRUMENT, instrumentId);
-    if (!audioCtxRef.current) return;
-
-    let cancelled = false;
-    setInstrumentLoading(true);
-    playerRef.current = null;
-
-    loadSoundfont(audioCtxRef.current, instrumentId, { soundfont: "MusyngKite" })
-      .then((p) => { if (!cancelled) playerRef.current = p; })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setInstrumentLoading(false); });
-
-    return () => { cancelled = true; };
-  }, [instrumentId]);
-
-  // ---------- Volume ----------
-  const [volume, setVolume] = useState<number>(() => {
-    const saved = parseFloat(localStorage.getItem(LS_VOLUME) ?? "");
-    return isNaN(saved) ? 1.0 : saved;
-  });
-
-  useEffect(() => {
-    localStorage.setItem(LS_VOLUME, String(volume));
-  }, [volume]);
+  const { instrumentId, setInstrumentId, volume, setVolume, instrumentLoading, play, stop } =
+    useSoundfontInstrument({ lsInstrumentKey: LS_INSTRUMENT, lsVolumeKey: LS_VOLUME });
 
   // ---------- Play mode ----------
-  const [playMode, setPlayMode] = useState<"harmonic" | "arpeggiated">(() => {
-    const saved = localStorage.getItem(LS_PLAY_MODE);
-    return saved === "arpeggiated" ? "arpeggiated" : "harmonic";
-  });
-
-  useEffect(() => {
-    localStorage.setItem(LS_PLAY_MODE, playMode);
-  }, [playMode]);
+  const [playMode, setPlayMode] = useLocalStorageState<"harmonic" | "arpeggiated">(
+    LS_PLAY_MODE,
+    "harmonic",
+    { parse: (raw) => (raw === "arpeggiated" ? "arpeggiated" : "harmonic"), serialize: (v) => v }
+  );
 
   // ---------- Enabled chords ----------
-  const [enabledSet, setEnabledSet] = useState<Set<string>>(loadEnabledSet);
-
-  useEffect(() => {
-    localStorage.setItem(LS_KEY, JSON.stringify(Array.from(enabledSet)));
-  }, [enabledSet]);
-
-  const enabledChords = useMemo(
-    () => ALL_CHORDS.filter((c) => enabledSet.has(c.id)),
-    [enabledSet]
-  );
+  const { enabledSet, enabledChords, toggleChord, toggleGroup, applyPreset } =
+    useEnabledChords(LS_KEY, ALL_CHORDS, CHORD_PRESETS);
 
   // ---------- Quiz state ----------
   const [question, setQuestion] = useState<Question>(() => {
@@ -145,12 +49,12 @@ export default function ChordQuizPage() {
   const [locked, setLocked] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string>("");
-  const [correct, setCorrect] = useState(0);
-  const [total, setTotal] = useState(0);
-  const [streak, setStreak] = useState(0);
+  const { correct, total, streak, accuracy, recordAnswer, resetScore: resetScoreState } = useQuizScore();
 
   useEffect(() => {
     if (!enabledSet.has(question.chord.id)) {
+      stop();
+      setLocked(false);
       setQuestion(makeQuestion(enabledChords.length ? enabledChords : ALL_CHORDS));
       setHasPlayed(false);
       setSelected(null);
@@ -158,51 +62,33 @@ export default function ChordQuizPage() {
     }
   }, [enabledSet]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const accuracy = useMemo(
-    () => (total === 0 ? 0 : Math.round((correct / total) * 100)),
-    [correct, total]
-  );
+  useEffect(() => {
+    stop();
+    setLocked(false);
+    setHasPlayed(false);
+  }, [instrumentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function playQuestion() {
     if (enabledChords.length === 0) {
       setFeedback("Enable at least one chord in Settings.");
       return;
     }
-    const id = ++playIdRef.current;
-    try {
-      setFeedback("");
-      setLocked(true);
-      await ensureAudio(instrumentId);
-
-      if (id !== playIdRef.current) return;
-
-      if (!playerRef.current) {
-        setFeedback("Instrument failed to load — check your connection and try again.");
-        return;
-      }
-
-      playerRef.current.stop();
-      const now = audioCtxRef.current!.currentTime;
-      const { intervals } = question.chord;
-      const dur = CHORD_MS / 1000;
-      const gap = ARPEG_GAP_MS / 1000;
-
-      if (playMode === "harmonic") {
-        intervals.forEach((semitones) => {
-          playerRef.current!.play(question.rootMidi + semitones, now, { duration: dur, gain: volume });
-        });
-        await sleep(CHORD_MS + 100);
-      } else {
-        intervals.forEach((semitones, i) => {
-          playerRef.current!.play(question.rootMidi + semitones, now + i * gap, { duration: dur, gain: volume });
-        });
-        await sleep((intervals.length - 1) * ARPEG_GAP_MS + CHORD_MS + 100);
-      }
-
-      if (id === playIdRef.current) setHasPlayed(true);
-    } finally {
-      if (id === playIdRef.current) setLocked(false);
+    setFeedback("");
+    setLocked(true);
+    const midiNotes = question.chord.intervals.map((semitones) => question.rootMidi + semitones);
+    const result = await play(midiNotes, {
+      mode: playMode === "harmonic" ? "simultaneous" : "arpeggiated",
+      noteMs: CHORD_MS,
+      gapMs: ARPEG_GAP_MS,
+    });
+    if (result.ok) {
+      setHasPlayed(true);
+      setLocked(false);
+    } else if (result.reason === "load-failed") {
+      setFeedback("Instrument failed to load — check your connection and try again.");
+      setLocked(false);
     }
+    // cancelled: a newer play/stop call already owns `locked`
   }
 
   function submitAnswer(chordId: string) {
@@ -214,14 +100,11 @@ export default function ChordQuizPage() {
 
     setSelected(chordId);
     const isCorrect = chordId === question.chord.id;
-    setTotal((t) => t + 1);
+    recordAnswer(isCorrect);
 
     if (isCorrect) {
-      setCorrect((c) => c + 1);
-      setStreak((s) => s + 1);
       setFeedback(`✅ Correct — ${question.chord.label} (${question.chord.short})`);
     } else {
-      setStreak(0);
       const chosen = ALL_CHORDS.find((c) => c.id === chordId)!;
       setFeedback(
         `❌ ${chosen.label} (${chosen.short}) — correct was ${question.chord.label} (${question.chord.short})`
@@ -234,8 +117,7 @@ export default function ChordQuizPage() {
       setFeedback("Enable at least one chord in Settings.");
       return;
     }
-    playIdRef.current++;
-    playerRef.current?.stop();
+    stop();
     setLocked(false);
     setQuestion(makeQuestion(enabledChords));
     setHasPlayed(false);
@@ -244,49 +126,13 @@ export default function ChordQuizPage() {
   }
 
   function resetScore() {
-    playIdRef.current++;
-    playerRef.current?.stop();
+    stop();
     setLocked(false);
-    setCorrect(0);
-    setTotal(0);
-    setStreak(0);
+    resetScoreState();
     setFeedback("");
     setSelected(null);
     setHasPlayed(false);
     setQuestion(makeQuestion(enabledChords.length ? enabledChords : ALL_CHORDS));
-  }
-
-  function applyPreset(ids: string[]) {
-    setEnabledSet(new Set(ids));
-  }
-
-  function toggleChord(id: string) {
-    setEnabledSet((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        if (next.size === 1) return next;
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  }
-
-  function toggleGroup(groupId: ChordGroup) {
-    const groupChords = ALL_CHORDS.filter((c) => c.group === groupId);
-    const allEnabled = groupChords.every((c) => enabledSet.has(c.id));
-    setEnabledSet((prev) => {
-      const next = new Set(prev);
-      if (allEnabled) {
-        const afterRemoval = new Set([...next].filter((id) => !groupChords.some((c) => c.id === id)));
-        if (afterRemoval.size === 0) return next;
-        return afterRemoval;
-      } else {
-        groupChords.forEach((c) => next.add(c.id));
-        return next;
-      }
-    });
   }
 
   const playButtonLabel = instrumentLoading
@@ -305,13 +151,21 @@ export default function ChordQuizPage() {
       </p>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", margin: "1rem 0" }}>
-        <button onClick={playQuestion} disabled={locked || instrumentLoading || enabledChords.length === 0}>
+        <button
+          onClick={playQuestion}
+          disabled={locked || instrumentLoading || enabledChords.length === 0}
+          style={{ minHeight: 44, padding: "10px 16px" }}
+        >
           {playButtonLabel}
         </button>
-        <button onClick={nextQuestion} disabled={locked || enabledChords.length === 0}>
+        <button
+          onClick={nextQuestion}
+          disabled={locked || enabledChords.length === 0}
+          style={{ minHeight: 44, padding: "10px 16px" }}
+        >
           Next
         </button>
-        <button onClick={resetScore} disabled={locked}>
+        <button onClick={resetScore} disabled={locked} style={{ minHeight: 44, padding: "10px 16px" }}>
           Reset
         </button>
 
@@ -322,7 +176,7 @@ export default function ChordQuizPage() {
         </div>
       </div>
 
-      <details style={{ margin: "1rem 0", borderRadius: 12, padding: "0.8rem 1rem", background: "rgba(255,255,255,0.06)" }}>
+      <details style={{ margin: "1rem 0", borderRadius: 12, padding: "0.8rem 1rem", background: white(0.06) }}>
         <summary style={{ cursor: "pointer", fontWeight: 700 }}>Settings</summary>
 
         {/* Presets */}
@@ -338,11 +192,13 @@ export default function ChordQuizPage() {
                   key={preset.label}
                   onClick={() => applyPreset(preset.ids)}
                   disabled={locked}
+                  aria-pressed={active}
                   style={{
                     padding: "0.45rem 0.9rem",
+                    minHeight: 44,
                     borderRadius: 8,
-                    border: active ? "2px solid rgba(80,160,255,0.8)" : "1px solid rgba(255,255,255,0.18)",
-                    background: active ? "rgba(80,160,255,0.12)" : "rgba(255,255,255,0.05)",
+                    border: active ? `2px solid ${blue(0.8)}` : `1px solid ${white(0.18)}`,
+                    background: active ? blue(0.12) : white(0.05),
                     color: "inherit",
                     cursor: locked ? "not-allowed" : "pointer",
                     fontWeight: active ? 700 : 400,
@@ -356,7 +212,7 @@ export default function ChordQuizPage() {
           </div>
         </div>
 
-        <div style={{ height: 1, background: "rgba(255,255,255,0.10)", margin: "14px 0" }} />
+        <div style={{ height: 1, background: white(0.10), margin: "14px 0" }} />
 
         {/* Chord groups */}
         <div style={{ fontWeight: 700, marginBottom: 8, opacity: 0.9 }}>Chords</div>
@@ -393,8 +249,8 @@ export default function ChordQuizPage() {
                         alignItems: "center",
                         padding: "0.65rem 0.85rem",
                         borderRadius: 10,
-                        border: "1px solid rgba(255,255,255,0.18)",
-                        background: enabled ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)",
+                        border: `1px solid ${white(0.18)}`,
+                        background: enabled ? white(0.08) : black(0.08),
                         opacity: isLast ? 0.8 : 1,
                         cursor: isLast || locked ? "not-allowed" : "pointer",
                         userSelect: "none",
@@ -422,58 +278,17 @@ export default function ChordQuizPage() {
           );
         })}
 
-        <div style={{ height: 1, background: "rgba(255,255,255,0.10)", margin: "14px 0" }} />
+        <div style={{ height: 1, background: white(0.10), margin: "14px 0" }} />
 
-        {/* Instrument selector */}
-        <div>
-          <div style={{ fontWeight: 700, marginBottom: 8, opacity: 0.9 }}>Instrument</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {INSTRUMENTS.map(({ id, label }) => {
-              const active = instrumentId === id;
-              return (
-                <button
-                  key={id}
-                  onClick={() => setInstrumentId(id)}
-                  disabled={instrumentLoading}
-                  style={{
-                    padding: "0.45rem 0.9rem",
-                    borderRadius: 8,
-                    border: active ? "2px solid rgba(80,160,255,0.8)" : "1px solid rgba(255,255,255,0.18)",
-                    background: active ? "rgba(80,160,255,0.12)" : "rgba(255,255,255,0.05)",
-                    color: "inherit",
-                    cursor: instrumentLoading ? "not-allowed" : "pointer",
-                    fontWeight: active ? 700 : 400,
-                    fontSize: 14,
-                  }}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-          {instrumentLoading && (
-            <div style={{ marginTop: 6, opacity: 0.65, fontSize: 13 }}>Loading instrument samples…</div>
-          )}
-        </div>
+        <InstrumentControls
+          instrumentId={instrumentId}
+          setInstrumentId={setInstrumentId}
+          instrumentLoading={instrumentLoading}
+          volume={volume}
+          setVolume={setVolume}
+        />
 
-        {/* Volume slider */}
-        <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ fontWeight: 700, opacity: 0.9, whiteSpace: "nowrap" }}>Volume</div>
-          <input
-            type="range"
-            min={0}
-            max={1.5}
-            step={0.05}
-            value={volume}
-            onChange={(e) => setVolume(parseFloat(e.target.value))}
-            style={{ flex: 1, maxWidth: 220, accentColor: "rgba(80,160,255,0.9)" }}
-          />
-          <div style={{ opacity: 0.75, fontSize: 13, width: 36, textAlign: "right" }}>
-            {Math.round(volume * 100)}%
-          </div>
-        </div>
-
-        <div style={{ height: 1, background: "rgba(255,255,255,0.10)", margin: "14px 0" }} />
+        <div style={{ height: 1, background: white(0.10), margin: "14px 0" }} />
 
         {/* Play mode */}
         <div>
@@ -485,11 +300,13 @@ export default function ChordQuizPage() {
                 <button
                   key={mode}
                   onClick={() => setPlayMode(mode)}
+                  aria-pressed={active}
                   style={{
                     padding: "0.45rem 0.9rem",
+                    minHeight: 44,
                     borderRadius: 8,
-                    border: active ? "2px solid rgba(80,160,255,0.8)" : "1px solid rgba(255,255,255,0.18)",
-                    background: active ? "rgba(80,160,255,0.12)" : "rgba(255,255,255,0.05)",
+                    border: active ? `2px solid ${blue(0.8)}` : `1px solid ${white(0.18)}`,
+                    background: active ? blue(0.12) : white(0.05),
                     color: "inherit",
                     cursor: "pointer",
                     fontWeight: active ? 700 : 400,
@@ -508,7 +325,7 @@ export default function ChordQuizPage() {
       <h2 style={{ marginTop: "1.2rem" }}>Answer</h2>
 
       {enabledChords.length === 0 ? (
-        <div style={{ padding: "0.9rem 1rem", borderRadius: 12, background: "rgba(255,255,255,0.06)" }}>
+        <div style={{ padding: "0.9rem 1rem", borderRadius: 12, background: white(0.06) }}>
           Enable at least one chord in Settings.
         </div>
       ) : (
@@ -517,7 +334,7 @@ export default function ChordQuizPage() {
             const isPicked = selected === chord.id;
             const isRight = selected !== null && chord.id === question.chord.id;
 
-            let border = "1px solid rgba(255,255,255,0.18)";
+            let border = `1px solid ${white(0.18)}`;
             let opacity = 1;
             if (selected !== null) {
               if (isRight) border = "2px solid rgba(0, 255, 160, 0.75)";
@@ -548,7 +365,11 @@ export default function ChordQuizPage() {
       )}
 
       {feedback && (
-        <div style={{ marginTop: 18, padding: "0.9rem 1rem", borderRadius: 12, background: "rgba(255,255,255,0.06)" }}>
+        <div
+          role="status"
+          aria-live="polite"
+          style={{ marginTop: 18, padding: "0.9rem 1rem", borderRadius: 12, background: white(0.06) }}
+        >
           {feedback}
         </div>
       )}

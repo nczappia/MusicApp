@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { instrument as loadSoundfont } from "soundfont-player";
-import type { Player } from "soundfont-player";
-import "../App.css";
+import { useEffect, useMemo, useState } from "react";
 import { ALL_INTERVALS, pick, randInt } from "../utils/intervals";
 import type { Interval } from "../utils/intervals";
+import { useSoundfontInstrument } from "../hooks/useSoundfontInstrument";
+import { useLocalStorageState } from "../hooks/useLocalStorageState";
+import { useQuizScore } from "../hooks/useQuizScore";
+import InstrumentControls from "../components/InstrumentControls";
+import { black, white } from "../utils/theme";
 
 type Question = { id: string; rootMidi: number; interval: Interval };
 
@@ -13,105 +15,27 @@ const LS_VOLUME = "intervalVolume";
 const NOTE_MS = 650;
 const GAP_MS = 120;
 
-const INSTRUMENTS: { id: string; label: string }[] = [
-  { id: "acoustic_grand_piano",  label: "Piano" },
-  { id: "electric_piano_1",      label: "Electric Piano" },
-  { id: "acoustic_guitar_nylon", label: "Nylon Guitar" },
-  { id: "acoustic_guitar_steel", label: "Steel Guitar" },
-  { id: "electric_guitar_clean", label: "Electric Guitar" },
-  { id: "violin",                label: "Violin" },
-  { id: "flute",                 label: "Flute" },
-  { id: "marimba",               label: "Marimba" },
-];
-
 function makeQuestion(enabledIntervals: Interval[]): Question {
   return { id: crypto.randomUUID(), rootMidi: randInt(48, 71), interval: pick(enabledIntervals) };
 }
 
-function sleep(ms: number) {
-  return new Promise<void>((r) => setTimeout(r, ms));
+function allSemitones(): Set<number> {
+  return new Set(ALL_INTERVALS.map((i) => i.semitones));
 }
 
 export default function IntervalQuizPage() {
-  // ---------- Audio ----------
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const playerRef = useRef<Player | null>(null);
-  const playIdRef = useRef(0);
-  const [instrumentLoading, setInstrumentLoading] = useState(false);
-
-  async function ensureAudio(instrumentId: string) {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new AudioContext();
-      setInstrumentLoading(true);
-      try {
-        playerRef.current = await loadSoundfont(audioCtxRef.current, instrumentId, { soundfont: "MusyngKite" });
-      } catch {
-        // CDN unavailable — player stays null, caught in playQuestion
-      } finally {
-        setInstrumentLoading(false);
-      }
-    }
-    if (audioCtxRef.current.state === "suspended") {
-      await audioCtxRef.current.resume();
-    }
-  }
-
-  useEffect(() => {
-    return () => {
-      audioCtxRef.current?.close().catch(() => {});
-      audioCtxRef.current = null;
-      playerRef.current = null;
-    };
-  }, []);
-
-  // ---------- Instrument ----------
-  const [instrumentId, setInstrumentId] = useState<string>(
-    () => localStorage.getItem(LS_INSTRUMENT) ?? "acoustic_grand_piano"
-  );
-
-  // Reload instrument when it changes (only if AudioContext already exists)
-  useEffect(() => {
-    localStorage.setItem(LS_INSTRUMENT, instrumentId);
-    if (!audioCtxRef.current) return;
-
-    let cancelled = false;
-    setInstrumentLoading(true);
-    playerRef.current = null;
-
-    loadSoundfont(audioCtxRef.current, instrumentId, { soundfont: "MusyngKite" })
-      .then((p) => { if (!cancelled) playerRef.current = p; })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setInstrumentLoading(false); });
-
-    return () => { cancelled = true; };
-  }, [instrumentId]);
-
-  // ---------- Volume ----------
-  const [volume, setVolume] = useState<number>(() => {
-    const saved = parseFloat(localStorage.getItem(LS_VOLUME) ?? "");
-    return isNaN(saved) ? 1.0 : saved;
-  });
-
-  useEffect(() => {
-    localStorage.setItem(LS_VOLUME, String(volume));
-  }, [volume]);
+  const { instrumentId, setInstrumentId, volume, setVolume, instrumentLoading, play, stop } =
+    useSoundfontInstrument({ lsInstrumentKey: LS_INSTRUMENT, lsVolumeKey: LS_VOLUME });
 
   // ---------- Enabled intervals ----------
-  const [enabledSet, setEnabledSet] = useState<Set<number>>(() => {
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (!raw) return new Set(ALL_INTERVALS.map((i) => i.semitones));
+  const [enabledSet, setEnabledSet] = useLocalStorageState<Set<number>>(LS_KEY, allSemitones(), {
+    parse: (raw) => {
       const parsed = JSON.parse(raw) as number[];
       const valid = parsed.filter((n) => ALL_INTERVALS.some((i) => i.semitones === n));
-      return new Set(valid.length ? valid : ALL_INTERVALS.map((i) => i.semitones));
-    } catch {
-      return new Set(ALL_INTERVALS.map((i) => i.semitones));
-    }
+      return new Set(valid.length ? valid : Array.from(allSemitones()));
+    },
+    serialize: (s) => JSON.stringify(Array.from(s).sort((a, b) => a - b)),
   });
-
-  useEffect(() => {
-    localStorage.setItem(LS_KEY, JSON.stringify(Array.from(enabledSet).sort((a, b) => a - b)));
-  }, [enabledSet]);
 
   const enabledIntervals = useMemo(
     () => ALL_INTERVALS.filter((i) => enabledSet.has(i.semitones)),
@@ -127,56 +51,46 @@ export default function IntervalQuizPage() {
   const [locked, setLocked] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<string>("");
-  const [correct, setCorrect] = useState(0);
-  const [total, setTotal] = useState(0);
-  const [streak, setStreak] = useState(0);
+  const { correct, total, streak, accuracy, recordAnswer, resetScore: resetScoreState } = useQuizScore();
 
   useEffect(() => {
     if (!enabledSet.has(question.interval.semitones)) {
+      stop();
+      setLocked(false);
       setQuestion(makeQuestion(enabledIntervals.length ? enabledIntervals : ALL_INTERVALS));
       setHasPlayed(false);
       setSelected(null);
       setFeedback("");
     }
-  }, [enabledSet]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabledSet]);
 
-  const accuracy = useMemo(
-    () => (total === 0 ? 0 : Math.round((correct / total) * 100)),
-    [correct, total]
-  );
+  useEffect(() => {
+    stop();
+    setLocked(false);
+    setHasPlayed(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instrumentId]);
 
   async function playQuestion() {
     if (enabledIntervals.length === 0) {
       setFeedback("Enable at least one interval in Settings.");
       return;
     }
-    const id = ++playIdRef.current;
-    try {
-      setFeedback("");
-      setLocked(true);
-      await ensureAudio(instrumentId);
-
-      if (id !== playIdRef.current) return; // cancelled during load
-
-      if (!playerRef.current) {
-        setFeedback("Instrument failed to load — check your connection and try again.");
-        return;
-      }
-
-      playerRef.current.stop();
-      const now = audioCtxRef.current!.currentTime;
-      playerRef.current.play(question.rootMidi, now, { duration: NOTE_MS / 1000, gain: volume });
-      playerRef.current.play(
-        question.rootMidi + question.interval.semitones,
-        now + (NOTE_MS + GAP_MS) / 1000,
-        { duration: NOTE_MS / 1000, gain: volume }
-      );
-
-      await sleep(NOTE_MS * 2 + GAP_MS + 100);
-      if (id === playIdRef.current) setHasPlayed(true);
-    } finally {
-      if (id === playIdRef.current) setLocked(false);
+    setFeedback("");
+    setLocked(true);
+    const result = await play(
+      [question.rootMidi, question.rootMidi + question.interval.semitones],
+      { mode: "sequential", noteMs: NOTE_MS, gapMs: GAP_MS }
+    );
+    if (result.ok) {
+      setHasPlayed(true);
+      setLocked(false);
+    } else if (result.reason === "load-failed") {
+      setFeedback("Instrument failed to load — check your connection and try again.");
+      setLocked(false);
     }
+    // cancelled: a newer play/stop call already owns `locked`
   }
 
   function submitAnswer(semitones: number) {
@@ -188,14 +102,11 @@ export default function IntervalQuizPage() {
 
     setSelected(semitones);
     const isCorrect = semitones === question.interval.semitones;
-    setTotal((t) => t + 1);
+    recordAnswer(isCorrect);
 
     if (isCorrect) {
-      setCorrect((c) => c + 1);
-      setStreak((s) => s + 1);
       setFeedback(`✅ Correct — ${question.interval.label} (${question.interval.short})`);
     } else {
-      setStreak(0);
       const right = question.interval;
       const chosen = ALL_INTERVALS.find((x) => x.semitones === semitones)!;
       setFeedback(`❌ ${chosen.label} (${chosen.short}) — correct was ${right.label} (${right.short})`);
@@ -207,8 +118,7 @@ export default function IntervalQuizPage() {
       setFeedback("Enable at least one interval in Settings.");
       return;
     }
-    playIdRef.current++;
-    playerRef.current?.stop();
+    stop();
     setLocked(false);
     setQuestion(makeQuestion(enabledIntervals));
     setHasPlayed(false);
@@ -217,12 +127,9 @@ export default function IntervalQuizPage() {
   }
 
   function resetScore() {
-    playIdRef.current++;
-    playerRef.current?.stop();
+    stop();
     setLocked(false);
-    setCorrect(0);
-    setTotal(0);
-    setStreak(0);
+    resetScoreState();
     setFeedback("");
     setSelected(null);
     setHasPlayed(false);
@@ -258,13 +165,21 @@ export default function IntervalQuizPage() {
       </p>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", margin: "1rem 0" }}>
-        <button onClick={playQuestion} disabled={locked || instrumentLoading || enabledIntervals.length === 0}>
+        <button
+          onClick={playQuestion}
+          disabled={locked || instrumentLoading || enabledIntervals.length === 0}
+          style={{ minHeight: 44, padding: "10px 16px" }}
+        >
           {playButtonLabel}
         </button>
-        <button onClick={nextQuestion} disabled={locked || enabledIntervals.length === 0}>
+        <button
+          onClick={nextQuestion}
+          disabled={locked || enabledIntervals.length === 0}
+          style={{ minHeight: 44, padding: "10px 16px" }}
+        >
           Next
         </button>
-        <button onClick={resetScore} disabled={locked}>
+        <button onClick={resetScore} disabled={locked} style={{ minHeight: 44, padding: "10px 16px" }}>
           Reset
         </button>
 
@@ -275,67 +190,26 @@ export default function IntervalQuizPage() {
         </div>
       </div>
 
-      <details style={{ margin: "1rem 0", borderRadius: 12, padding: "0.8rem 1rem", background: "rgba(255,255,255,0.06)" }}>
+      <details style={{ margin: "1rem 0", borderRadius: 12, padding: "0.8rem 1rem", background: white(0.06) }}>
         <summary style={{ cursor: "pointer", fontWeight: 700 }}>Settings</summary>
 
-        {/* Instrument selector */}
-        <div style={{ marginTop: 14 }}>
-          <div style={{ fontWeight: 700, marginBottom: 8, opacity: 0.9 }}>Instrument</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {INSTRUMENTS.map(({ id, label }) => {
-              const active = instrumentId === id;
-              return (
-                <button
-                  key={id}
-                  onClick={() => setInstrumentId(id)}
-                  disabled={instrumentLoading}
-                  style={{
-                    padding: "0.45rem 0.9rem",
-                    borderRadius: 8,
-                    border: active ? "2px solid rgba(80,160,255,0.8)" : "1px solid rgba(255,255,255,0.18)",
-                    background: active ? "rgba(80,160,255,0.12)" : "rgba(255,255,255,0.05)",
-                    color: "inherit",
-                    cursor: instrumentLoading ? "not-allowed" : "pointer",
-                    fontWeight: active ? 700 : 400,
-                    fontSize: 14,
-                  }}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-          {instrumentLoading && (
-            <div style={{ marginTop: 6, opacity: 0.65, fontSize: 13 }}>Loading instrument samples…</div>
-          )}
-        </div>
+        <InstrumentControls
+          instrumentId={instrumentId}
+          setInstrumentId={setInstrumentId}
+          instrumentLoading={instrumentLoading}
+          volume={volume}
+          setVolume={setVolume}
+        />
 
-        {/* Volume slider */}
-        <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ fontWeight: 700, opacity: 0.9, whiteSpace: "nowrap" }}>Volume</div>
-          <input
-            type="range"
-            min={0}
-            max={1.5}
-            step={0.05}
-            value={volume}
-            onChange={(e) => setVolume(parseFloat(e.target.value))}
-            style={{ flex: 1, maxWidth: 220, accentColor: "rgba(80,160,255,0.9)" }}
-          />
-          <div style={{ opacity: 0.75, fontSize: 13, width: 36, textAlign: "right" }}>
-            {Math.round(volume * 100)}%
-          </div>
-        </div>
-
-        <div style={{ height: 1, background: "rgba(255,255,255,0.10)", margin: "14px 0" }} />
+        <div style={{ height: 1, background: white(0.10), margin: "14px 0" }} />
 
         {/* Interval toggles */}
         <div style={{ fontWeight: 700, marginBottom: 8, opacity: 0.9 }}>Intervals</div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-          <button onClick={() => setEnabledSet(new Set(ALL_INTERVALS.map((i) => i.semitones)))} disabled={locked}>
+          <button onClick={() => setEnabledSet(allSemitones())} disabled={locked} style={{ minHeight: 44, padding: "10px 16px" }}>
             Enable all
           </button>
-          <button onClick={() => setEnabledSet(new Set([0, 3, 4, 5, 7, 12]))} disabled={locked}>
+          <button onClick={() => setEnabledSet(new Set([0, 3, 4, 5, 7, 12]))} disabled={locked} style={{ minHeight: 44, padding: "10px 16px" }}>
             Common set
           </button>
           <div style={{ opacity: 0.75, alignSelf: "center", fontSize: 13 }}>
@@ -356,8 +230,8 @@ export default function IntervalQuizPage() {
                   alignItems: "center",
                   padding: "0.75rem 0.85rem",
                   borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,0.18)",
-                  background: enabled ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)",
+                  border: `1px solid ${white(0.18)}`,
+                  background: enabled ? white(0.08) : black(0.08),
                   opacity: disabledBecauseLast ? 0.8 : 1,
                   cursor: disabledBecauseLast ? "not-allowed" : "pointer",
                   userSelect: "none",
@@ -384,7 +258,7 @@ export default function IntervalQuizPage() {
       <h2 style={{ marginTop: "1.2rem" }}>Answer</h2>
 
       {enabledIntervals.length === 0 ? (
-        <div style={{ padding: "0.9rem 1rem", borderRadius: 12, background: "rgba(255,255,255,0.06)" }}>
+        <div style={{ padding: "0.9rem 1rem", borderRadius: 12, background: white(0.06) }}>
           Enable at least one interval in Settings.
         </div>
       ) : (
@@ -394,7 +268,7 @@ export default function IntervalQuizPage() {
             const isRight = selected !== null && i.semitones === question.interval.semitones;
             const showRight = selected !== null;
 
-            let border = "1px solid rgba(255,255,255,0.18)";
+            let border = `1px solid ${white(0.18)}`;
             let opacity = 1;
             if (showRight) {
               if (isRight) border = "2px solid rgba(0, 255, 160, 0.75)";
@@ -425,7 +299,11 @@ export default function IntervalQuizPage() {
       )}
 
       {feedback && (
-        <div style={{ marginTop: 18, padding: "0.9rem 1rem", borderRadius: 12, background: "rgba(255,255,255,0.06)" }}>
+        <div
+          role="status"
+          aria-live="polite"
+          style={{ marginTop: 18, padding: "0.9rem 1rem", borderRadius: 12, background: white(0.06) }}
+        >
           {feedback}
         </div>
       )}

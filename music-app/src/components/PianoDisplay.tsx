@@ -1,4 +1,7 @@
+import { memo, type ReactElement } from "react";
 import { PIANO_START_MIDI, PIANO_END_MIDI } from "../utils/pianoChords";
+import { midiToNameOct } from "../utils/fretboard";
+import { black } from "../utils/theme";
 
 export type PianoKeyKind = "root" | "note" | "extension";
 export type PianoHighlight = { midi: number; kind: PianoKeyKind };
@@ -32,11 +35,14 @@ const HL: Record<PianoKeyKind, { wBg: string; bBg: string; glow: string }> = {
   extension: { wBg: "rgba(190,100,255,0.85)", bBg: "rgba(140,60,210,0.9)", glow: "#6a1b9a" },
 };
 
-export default function PianoDisplay({ highlights = [] }: Props) {
+function PianoDisplay({ highlights = [] }: Props) {
   const hlMap = new Map<number, PianoKeyKind>(highlights.map((h) => [h.midi, h.kind]));
+  const ariaLabel = highlights.length
+    ? `Piano keyboard — highlighted notes: ${highlights.map((h) => midiToNameOct(h.midi)).join(", ")}`
+    : "Piano keyboard showing chord tones";
 
-  const whites: React.ReactElement[] = [];
-  const blacks: React.ReactElement[] = [];
+  const whites: ReactElement[] = [];
+  const blacks: ReactElement[] = [];
 
   for (let m = PIANO_START_MIDI; m <= PIANO_END_MIDI; m++) {
     const s = m % 12;
@@ -57,11 +63,11 @@ export default function PianoDisplay({ highlights = [] }: Props) {
             background: pal
               ? pal.wBg
               : "linear-gradient(180deg, #e4e4e4 0%, #fff 25%, #f8f8f8 100%)",
-            border: "1px solid rgba(0,0,0,0.28)",
+            border: `1px solid ${black(0.28)}`,
             borderRadius: "0 0 5px 5px",
             boxShadow: pal
-              ? `0 0 0 2.5px ${pal.glow}, 0 4px 10px rgba(0,0,0,0.18)`
-              : "0 2px 5px rgba(0,0,0,0.12)",
+              ? `0 0 0 2.5px ${pal.glow}, 0 4px 10px ${black(0.18)}`
+              : `0 2px 5px ${black(0.12)}`,
             zIndex: 1,
             display: "flex",
             alignItems: "flex-end",
@@ -72,7 +78,7 @@ export default function PianoDisplay({ highlights = [] }: Props) {
           {s === 0 && (
             <span style={{
               fontSize: 10,
-              color: pal ? "rgba(0,0,0,0.60)" : "rgba(0,0,0,0.35)",
+              color: pal ? black(0.60) : black(0.35),
               fontWeight: 700,
               lineHeight: 1,
             }}>
@@ -95,8 +101,8 @@ export default function PianoDisplay({ highlights = [] }: Props) {
               : "linear-gradient(180deg, #2a2a2a 0%, #111 65%, #000 100%)",
             borderRadius: "0 0 4px 4px",
             boxShadow: pal
-              ? `0 0 0 2.5px ${pal.glow}, 0 5px 12px rgba(0,0,0,0.55)`
-              : "0 5px 12px rgba(0,0,0,0.55)",
+              ? `0 0 0 2.5px ${pal.glow}, 0 5px 12px ${black(0.55)}`
+              : `0 5px 12px ${black(0.55)}`,
             zIndex: 3,
           }}
         />
@@ -105,11 +111,17 @@ export default function PianoDisplay({ highlights = [] }: Props) {
   }
 
   return (
-    <div style={{ overflowX: "auto", padding: "4px 0 8px" }}>
-      <div style={{ position: "relative", width: TOTAL_W, height: WHITE_KEY_H + 4, userSelect: "none" }}>
+    <div
+      role="img"
+      aria-label={ariaLabel}
+      style={{ overflowX: "auto", padding: "4px 0 8px", scrollSnapType: "x proximity", WebkitOverflowScrolling: "touch" }}
+    >
+      <div style={{ position: "relative", width: TOTAL_W, height: WHITE_KEY_H + 4, userSelect: "none", scrollSnapAlign: "start" }}>
         {whites}
         {blacks}
       </div>
     </div>
   );
 }
+
+export default memo(PianoDisplay);

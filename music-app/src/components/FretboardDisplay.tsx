@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   type Cell,
   ROW_HEIGHT, ROW_GAP, PITCH, NUM_COLS, MAX_FRET,
   MARKER_SINGLE, MARKER_DOUBLE, STRING_WIDTHS,
   strings, frets, allocateWidths, clamp,
 } from "../utils/fretboard";
+import { black, blue, green, red, white } from "../utils/theme";
 
 export type HighlightKind = "found" | "wrong" | "target";
 export type FretboardHighlight = { cell: Cell; kind: HighlightKind };
@@ -13,7 +14,13 @@ type Props = {
   highlights?: FretboardHighlight[];
   onCellClick?: (cell: Cell) => void;
   cursor?: string;
+  // Renders only frets 0..visibleFrets (defaults to the full neck, MAX_FRET).
+  visibleFrets?: number;
+  // Change this (e.g. per-question) to reset stale keyboard-nav result state.
+  resetKey?: number | string;
 };
+
+const FULL_BOARD_MIN_WIDTH = 1900; // px, at NUM_COLS (MAX_FRET+1) columns
 
 // Vertical space between outermost strings and fretboard edge.
 // Real guitars: edge clearance ≈ 48% of inter-string spacing.
@@ -38,22 +45,51 @@ const INLAY_STYLE: React.CSSProperties = {
   left: "50%",
   transform: "translateX(-50%)",
   background:
-    "radial-gradient(circle at 38% 35%, rgba(255,255,255,0.97) 0%, rgba(210,228,255,0.82) 30%, rgba(195,210,240,0.7) 55%, rgba(200,220,245,0.55) 75%, rgba(170,185,210,0.4) 100%)",
+    `radial-gradient(circle at 38% 35%, ${white(0.97)} 0%, rgba(210,228,255,0.82) 30%, rgba(195,210,240,0.7) 55%, rgba(200,220,245,0.55) 75%, rgba(170,185,210,0.4) 100%)`,
   boxShadow:
-    "0 1px 3px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,0,0,0.25), 0 1px 0 rgba(255,255,255,0.25) inset",
+    `0 1px 3px ${black(0.55)}, 0 0 0 1px ${black(0.25)}, 0 1px 0 ${white(0.25)} inset`,
 };
 
-export default function FretboardDisplay({ highlights = [], onCellClick, cursor }: Props) {
+function FretboardDisplay({ highlights = [], onCellClick, cursor, visibleFrets, resetKey }: Props) {
+  const maxFret = visibleFrets ?? MAX_FRET;
+  const numCols = maxFret + 1;
+  const visibleFretNums = useMemo(() => frets.slice(0, numCols), [numCols]);
+  const boardMinWidth = Math.round((FULL_BOARD_MIN_WIDTH * numCols) / NUM_COLS);
+
   const boardRef = useRef<HTMLDivElement | null>(null);
-  const [colPx, setColPx] = useState<number[]>(() => Array(NUM_COLS).fill(40));
-  const [boundPx, setBoundPx] = useState<number[]>(() => Array(NUM_COLS + 1).fill(0));
+  const [colPx, setColPx] = useState<number[]>(() => Array(numCols).fill(40));
+  const [boundPx, setBoundPx] = useState<number[]>(() => Array(numCols + 1).fill(0));
+  const [focusedCell, setFocusedCell] = useState<Cell>({ stringIdx: 0, fret: 0 });
+  const [isBoardFocused, setIsBoardFocused] = useState(false);
+  const [lastActivatedCell, setLastActivatedCell] = useState<Cell | null>(null);
+  const [lastResult, setLastResult] = useState<"correct" | "try again" | null>(null);
+
+  useEffect(() => {
+    if (!lastActivatedCell) return;
+    const isFound = highlights.some(
+      (h) =>
+        h.kind === "found" &&
+        h.cell.stringIdx === lastActivatedCell.stringIdx &&
+        h.cell.fret === lastActivatedCell.fret
+    );
+    setLastResult(isFound ? "correct" : "try again");
+  }, [highlights, lastActivatedCell]);
+
+  useEffect(() => {
+    setFocusedCell((c) => (c.fret > maxFret ? { ...c, fret: maxFret } : c));
+  }, [maxFret]);
+
+  useEffect(() => {
+    setLastResult(null);
+    setLastActivatedCell(null);
+  }, [resetKey]);
 
   useEffect(() => {
     const el = boardRef.current;
     if (!el) return;
     const update = () => {
       const { width } = el.getBoundingClientRect();
-      const { w, b } = allocateWidths(width);
+      const { w, b } = allocateWidths(width, numCols);
       setColPx(w);
       setBoundPx(b);
     };
@@ -61,7 +97,7 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
     ro.observe(el);
     update();
     return () => ro.disconnect();
-  }, []);
+  }, [numCols]);
 
   const nutX = boundPx[1] ?? 0;
   const gridCols = useMemo(() => colPx.map((w) => `${w}px`).join(" "), [colPx]);
@@ -70,9 +106,9 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
     const left = boundPx[cell.fret] ?? 0;
     const right = boundPx[cell.fret + 1] ?? left + 10;
     const palette = {
-      found:  { shadow: "rgba(0, 255, 160, 0.80)", bg: "rgba(0,255,160,0.10)" },
-      wrong:  { shadow: "rgba(255, 80, 80, 0.80)",  bg: "rgba(255,80,80,0.12)" },
-      target: { shadow: "rgba(80, 160, 255, 0.90)", bg: "rgba(80,160,255,0.20)" },
+      found:  { shadow: "rgba(0, 255, 160, 0.80)", bg: green(0.10) },
+      wrong:  { shadow: "rgba(255, 80, 80, 0.80)",  bg: red(0.12) },
+      target: { shadow: "rgba(80, 160, 255, 0.90)", bg: blue(0.20) },
     };
     const { shadow, bg } = palette[kind];
     return {
@@ -89,24 +125,65 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
     };
   }
 
-  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+  function handleCellClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!onCellClick) return;
     const rect = boardRef.current!.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    let fret = MAX_FRET;
-    for (let i = 0; i < NUM_COLS; i++) {
+    let fret = maxFret;
+    for (let i = 0; i < numCols; i++) {
       if (x >= boundPx[i] && x < boundPx[i + 1]) { fret = i; break; }
     }
     const stringIdx = clamp(Math.round((y - ROW_HEIGHT / 2) / (ROW_HEIGHT + ROW_GAP)), 0, 5);
-    onCellClick({ stringIdx, fret: clamp(fret, 0, MAX_FRET) });
+    const cell = { stringIdx, fret: clamp(fret, 0, maxFret) };
+    setFocusedCell(cell);
+    onCellClick(cell);
+    setLastActivatedCell(cell);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (!onCellClick) return;
+    switch (e.key) {
+      case "ArrowUp":
+        e.preventDefault();
+        setLastActivatedCell(null);
+        setLastResult(null);
+        setFocusedCell((c) => ({ ...c, stringIdx: clamp(c.stringIdx - 1, 0, 5) }));
+        return;
+      case "ArrowDown":
+        e.preventDefault();
+        setLastActivatedCell(null);
+        setLastResult(null);
+        setFocusedCell((c) => ({ ...c, stringIdx: clamp(c.stringIdx + 1, 0, 5) }));
+        return;
+      case "ArrowLeft":
+        e.preventDefault();
+        setLastActivatedCell(null);
+        setLastResult(null);
+        setFocusedCell((c) => ({ ...c, fret: clamp(c.fret - 1, 0, maxFret) }));
+        return;
+      case "ArrowRight":
+        e.preventDefault();
+        setLastActivatedCell(null);
+        setLastResult(null);
+        setFocusedCell((c) => ({ ...c, fret: clamp(c.fret + 1, 0, maxFret) }));
+        return;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        onCellClick(focusedCell);
+        setLastActivatedCell(focusedCell);
+        return;
+      default:
+        return;
+    }
   }
 
   function stringGradient(stringIdx: number): string {
     if (stringIdx <= 1) {
       // plain steel
-      return "linear-gradient(180deg, rgba(160,168,185,0.7) 0%, rgba(240,244,255,0.96) 30%, rgba(255,255,255,1) 50%, rgba(230,236,250,0.95) 70%, rgba(155,162,178,0.65) 100%)";
+      return `linear-gradient(180deg, rgba(160,168,185,0.7) 0%, rgba(240,244,255,0.96) 30%, ${white(1)} 50%, rgba(230,236,250,0.95) 70%, rgba(155,162,178,0.65) 100%)`;
     }
     // wound nickel
     return "linear-gradient(180deg, rgba(130,118,95,0.75) 0%, rgba(210,195,158,0.95) 28%, rgba(200,185,148,0.9) 55%, rgba(165,148,112,0.8) 78%, rgba(120,108,85,0.65) 100%)";
@@ -114,8 +191,8 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
 
   return (
     /* Scroll wrapper: fret numbers + board scroll together */
-    <div style={{ overflowX: "auto" }}>
-      <div style={{ minWidth: 1900 }}>
+    <div style={{ overflowX: "auto", scrollSnapType: "x proximity", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ minWidth: boardMinWidth, scrollSnapAlign: "start" }}>
 
         {/* Fret numbers */}
         <div style={{
@@ -128,7 +205,7 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
           opacity: 0.55,
           fontSize: 12,
         }}>
-          {frets.map((f) => (
+          {visibleFretNums.map((f) => (
             <div key={`top-${f}`} style={{ textAlign: "center" }}>{f}</div>
           ))}
         </div>
@@ -139,7 +216,7 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
           padding: 4,
           background: "linear-gradient(180deg, #1A0A03 0%, #110702 100%)",
           border: "1px solid rgba(60,30,10,0.95)",
-          boxShadow: "0 6px 28px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.04) inset",
+          boxShadow: `0 6px 28px ${black(0.7)}, 0 1px 0 ${white(0.04)} inset`,
         }}>
           {/* Wood surface — frets and nut span this full height */}
           <div style={{
@@ -149,11 +226,11 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
             overflow: "hidden",
             background: [
               // subtle left-to-right: slightly lighter near nut, natural vignette toward body
-              "linear-gradient(90deg, rgba(255,180,80,0.06) 0%, transparent 18%, transparent 82%, rgba(0,0,0,0.12) 100%)",
+              `linear-gradient(90deg, rgba(255,180,80,0.06) 0%, transparent 18%, transparent 82%, ${black(0.12)} 100%)`,
               // base rosewood
               "linear-gradient(180deg, #5C2810 0%, #3A1808 20%, #4E2210 45%, #3A1808 70%, #4A2010 100%)",
             ].join(", "),
-            boxShadow: "0 0 0 1px rgba(0,0,0,0.65) inset",
+            boxShadow: `0 0 0 1px ${black(0.65)} inset`,
           }}>
 
             {/* Fret wires — edge to edge (top:0, bottom:0 = full board height) */}
@@ -168,10 +245,10 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
                 transform: "translateX(-4px)",
                 background: "linear-gradient(90deg, rgba(215,200,155,0.55) 0%, rgba(248,238,198,0.97) 28%, rgba(255,250,218,1) 52%, rgba(238,222,178,0.95) 78%, rgba(205,190,145,0.6) 100%)",
                 borderRadius: 3,
-                boxShadow: "1px 0 3px rgba(0,0,0,0.55), 1px 0 2px rgba(255,255,255,0.18) inset",
+                boxShadow: `1px 0 3px ${black(0.55)}, 1px 0 2px ${white(0.18)} inset`,
               }} />
               {/* Regular frets */}
-              {Array.from({ length: MAX_FRET - 1 }, (_, idx) => idx + 2).map((bIdx) => (
+              {Array.from({ length: numCols - 2 }, (_, idx) => idx + 2).map((bIdx) => (
                 <div key={`wire-${bIdx}`} style={{
                   position: "absolute",
                   left: boundPx[bIdx] ?? 0,
@@ -179,9 +256,9 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
                   bottom: 0,
                   width: 5,
                   transform: "translateX(-2.5px)",
-                  background: "linear-gradient(90deg, rgba(80,85,100,0.35) 0%, rgba(185,190,208,0.88) 15%, rgba(238,240,250,1) 34%, rgba(255,255,255,1) 50%, rgba(235,238,250,1) 66%, rgba(183,188,206,0.86) 85%, rgba(78,83,98,0.33) 100%)",
+                  background: `linear-gradient(90deg, rgba(80,85,100,0.35) 0%, rgba(185,190,208,0.88) 15%, rgba(238,240,250,1) 34%, ${white(1)} 50%, rgba(235,238,250,1) 66%, rgba(183,188,206,0.86) 85%, rgba(78,83,98,0.33) 100%)`,
                   borderRadius: 2,
-                  boxShadow: "0 0 4px rgba(0,0,0,0.6), 0 0 2px rgba(255,255,255,0.35) inset",
+                  boxShadow: `0 0 4px ${black(0.6)}, 0 0 2px ${white(0.35)} inset`,
                 }} />
               ))}
             </div>
@@ -189,7 +266,7 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
             {/* Inlays — mother-of-pearl, pixel Y positions centred within string span */}
             <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 6 }}>
               <div style={{ display: "grid", gridTemplateColumns: gridCols, height: "100%", position: "relative" }}>
-                {frets.map((f) => {
+                {visibleFretNums.map((f) => {
                   const isSingle = MARKER_SINGLE.includes(f);
                   const isDouble = MARKER_DOUBLE.includes(f);
                   return (
@@ -212,7 +289,13 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
             {/* Hit area: sits at VTOP from board top, same width as board */}
             <div
               ref={boardRef}
-              onPointerDown={onCellClick ? handlePointerDown : undefined}
+              role={onCellClick ? "group" : undefined}
+              aria-label={onCellClick ? "Guitar fretboard. Use arrow keys to move between frets and strings, Enter or Space to select." : undefined}
+              tabIndex={onCellClick ? 0 : undefined}
+              onClick={onCellClick ? handleCellClick : undefined}
+              onKeyDown={onCellClick ? handleKeyDown : undefined}
+              onFocus={onCellClick ? () => setIsBoardFocused(true) : undefined}
+              onBlur={onCellClick ? () => setIsBoardFocused(false) : undefined}
               style={{
                 position: "absolute",
                 left: 0,
@@ -229,6 +312,25 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
               {highlights.map(({ cell, kind }) => (
                 <div key={`hl-${cell.stringIdx}-${cell.fret}-${kind}`} style={highlightStyle(cell, kind)} />
               ))}
+
+              {/* Keyboard focus indicator */}
+              {onCellClick && isBoardFocused && (
+                <div style={{ ...highlightStyle(focusedCell, "target"), boxShadow: `0 0 0 2px ${white(0.9)}` }} />
+              )}
+
+              {/* Off-screen live region announcing keyboard nav position to AT */}
+              {onCellClick && (
+                <div
+                  aria-live="polite"
+                  style={{ position: "absolute", left: "-9999px", width: 1, height: 1, overflow: "hidden" }}
+                >
+                  {isBoardFocused && focusedCell
+                    ? lastResult
+                      ? `String ${focusedCell.stringIdx + 1}, Fret ${focusedCell.fret} — ${lastResult}`
+                      : `String ${focusedCell.stringIdx + 1}, Fret ${focusedCell.fret}`
+                    : ""}
+                </div>
+              )}
 
               {/* Strings */}
               {strings.map((stringIdx) => {
@@ -248,7 +350,7 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
                       left: 0, right: 0,
                       top: thickness / 2 + 1,
                       height: Math.max(1, thickness * 0.45),
-                      background: "rgba(0,0,0,0.4)",
+                      background: black(0.4),
                       borderRadius: 999,
                       filter: "blur(1px)",
                     }} />
@@ -272,3 +374,5 @@ export default function FretboardDisplay({ highlights = [], onCellClick, cursor 
     </div>
   );
 }
+
+export default memo(FretboardDisplay);

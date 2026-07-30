@@ -1,11 +1,15 @@
-import { useMemo, useEffect, useState } from "react";
+import { useMemo, useEffect, useRef, useState, useCallback } from "react";
 import PianoDisplay from "../components/PianoDisplay";
 import type { PianoHighlight } from "../components/PianoDisplay";
 import {
   PIANO_CHORDS, PIANO_CHORD_GROUPS, PIANO_PRESETS, ROOT_NAMES, CHORD_EXTENSIONS,
   makePianoQuestion,
 } from "../utils/pianoChords";
-import type { PianoChordDef, PianoChordGroup, PianoQuestion } from "../utils/pianoChords";
+import type { PianoChordDef, PianoQuestion } from "../utils/pianoChords";
+import { formatTime } from "../utils/time";
+import { useLocalStorageState } from "../hooks/useLocalStorageState";
+import { useEnabledChords } from "../hooks/useEnabledChords";
+import { amber, black, blue, green, red, white } from "../utils/theme";
 
 type Screen = "config" | "quiz" | "results";
 
@@ -24,17 +28,6 @@ const LS_NAT  = "pq_naturalRoots";
 const LS_EXT  = "pq_extensions";
 
 const PRESET_COUNTS = [5, 10, 20];
-const DEFAULT_IDS   = PIANO_PRESETS.find((p) => p.label === "Basics")!.ids;
-
-function loadIds(): Set<string> {
-  try {
-    const raw  = localStorage.getItem(LS_IDS);
-    if (!raw)  return new Set(DEFAULT_IDS);
-    const parsed = JSON.parse(raw) as string[];
-    const valid  = parsed.filter((id) => PIANO_CHORDS.some((c) => c.id === id));
-    return new Set(valid.length ? valid : DEFAULT_IDS);
-  } catch { return new Set(DEFAULT_IDS); }
-}
 
 // Returns every (root, chord) pair from enabledChords that covers the exact
 // same set of pitch classes as the generated chord's base notes.
@@ -63,12 +56,6 @@ function computeValidAnswers(
   return results;
 }
 
-function formatTime(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  return m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
-}
-
 function validAnswerLabel(va: ValidAnswer): string {
   const root = ROOT_NAMES.find((r) => r.semitone === va.rootSemitone)?.display ?? "?";
   const chord = PIANO_CHORDS.find((c) => c.id === va.chordId)?.label ?? "?";
@@ -79,9 +66,14 @@ export default function PianoChordQuizPage() {
   const [screen, setScreen] = useState<Screen>("config");
   const [totalQ, setTotalQ] = useState(10);
   const [customInput, setCustomInput] = useState("");
-  const [enabledIds, setEnabledIds] = useState<Set<string>>(loadIds);
-  const [naturalRoots, setNaturalRoots] = useState(() => localStorage.getItem(LS_NAT) === "true");
-  const [allowExt, setAllowExt]         = useState(() => localStorage.getItem(LS_EXT) === "true");
+  const { enabledSet, enabledChords, toggleChord, toggleGroup, applyPreset } =
+    useEnabledChords(LS_IDS, PIANO_CHORDS, PIANO_PRESETS);
+  const [naturalRoots, setNaturalRoots] = useLocalStorageState<boolean>(
+    LS_NAT, false, { parse: (raw) => raw === "true", serialize: (v) => String(v) }
+  );
+  const [allowExt, setAllowExt] = useLocalStorageState<boolean>(
+    LS_EXT, false, { parse: (raw) => raw === "true", serialize: (v) => String(v) }
+  );
 
   const [questions, setQuestions] = useState<PianoQuestion[]>([]);
   const [qIndex, setQIndex]       = useState(0);
@@ -99,18 +91,94 @@ export default function PianoChordQuizPage() {
     return () => clearInterval(id);
   }, [screen, startTime]);
 
-  useEffect(() => { localStorage.setItem(LS_IDS, JSON.stringify(Array.from(enabledIds))); }, [enabledIds]);
-  useEffect(() => { localStorage.setItem(LS_NAT, String(naturalRoots)); }, [naturalRoots]);
-  useEffect(() => { localStorage.setItem(LS_EXT, String(allowExt)); }, [allowExt]);
+  const autoAdvanceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (autoAdvanceRef.current) clearTimeout(autoAdvanceRef.current); }, []);
 
-  const enabledChords = PIANO_CHORDS.filter((c) => enabledIds.has(c.id));
+  const quizHeadingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (screen === "quiz") quizHeadingRef.current?.focus();
+    if (screen === "results") quizHeadingRef.current?.focus();
+  }, [screen]);
 
   // Valid answers for current question — recomputed only when question or enabled chords change
   const currentValidAnswers = useMemo<ValidAnswer[]>(() => {
     if (screen !== "quiz" || !questions[qIndex]) return [];
     const q = questions[qIndex];
     return computeValidAnswers(q.rootMidi, q.chord, enabledChords);
-  }, [screen, qIndex, questions, enabledIds]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [screen, qIndex, questions, enabledChords]);
+
+  // Piano highlights for current question — hoisted above the screen-branch early
+  // returns (below) so this hook runs unconditionally on every render, and stays a
+  // stable reference across the 10Hz elapsed-time timer ticks.
+  const current = questions[qIndex];
+  const pianoHighlights: PianoHighlight[] = useMemo(() => {
+    if (!current) return [];
+    return current.noteMidis.map((m) => {
+      if (current.extension && m === current.rootMidi + current.extension.semitone)
+        return { midi: m, kind: "extension" };
+      return { midi: m, kind: "note" };
+    });
+  }, [current?.noteMidis, current?.extension, current?.rootMidi]);
+
+  // Style helpers for the root/chord answer buttons — hoisted above the screen-branch
+  // early returns (below) so these hooks run unconditionally on every render.
+  const revealed    = locked;
+  const lastAnswer  = revealed ? answers[answers.length - 1] : null;
+  const lastCorrect = lastAnswer?.correct ?? false;
+  const validRootSems = useMemo(
+    () => new Set(currentValidAnswers.map((va) => va.rootSemitone)),
+    [currentValidAnswers]
+  );
+  const validChordIds = useMemo(
+    () => new Set(currentValidAnswers.map((va) => va.chordId)),
+    [currentValidAnswers]
+  );
+
+  const rootBorder = useCallback((display: string): string => {
+    const sem        = ROOT_NAMES.find((r) => r.display === display)?.semitone ?? -1;
+    const isSelected = rootChoice === display;
+    if (revealed) {
+      if (isSelected) return lastCorrect ? `2px solid ${green(0.8)}` : `2px solid ${red(0.8)}`;
+      if (validRootSems.has(sem)) return `2px solid ${green(0.35)}`;
+      return `1px solid ${white(0.08)}`;
+    }
+    if (isSelected) return `2px solid ${amber(0.8)}`;
+    return `1px solid ${white(0.18)}`;
+  }, [rootChoice, revealed, lastCorrect, validRootSems]);
+
+  const rootBg = useCallback((display: string): string => {
+    const sem        = ROOT_NAMES.find((r) => r.display === display)?.semitone ?? -1;
+    const isSelected = rootChoice === display;
+    if (revealed) {
+      if (isSelected) return lastCorrect ? green(0.12) : red(0.12);
+      if (validRootSems.has(sem)) return green(0.05);
+      return white(0.03);
+    }
+    if (isSelected) return amber(0.12);
+    return white(0.05);
+  }, [rootChoice, revealed, lastCorrect, validRootSems]);
+
+  const chordBorder = useCallback((id: string): string => {
+    const isSelected = chordChoice === id;
+    if (revealed) {
+      if (isSelected) return lastCorrect ? `2px solid ${green(0.8)}` : `2px solid ${red(0.8)}`;
+      if (validChordIds.has(id)) return `2px solid ${green(0.35)}`;
+      return `1px solid ${white(0.08)}`;
+    }
+    if (isSelected) return `2px solid ${amber(0.8)}`;
+    return `1px solid ${white(0.18)}`;
+  }, [chordChoice, revealed, lastCorrect, validChordIds]);
+
+  const chordBg = useCallback((id: string): string => {
+    const isSelected = chordChoice === id;
+    if (revealed) {
+      if (isSelected) return lastCorrect ? green(0.12) : red(0.12);
+      if (validChordIds.has(id)) return green(0.05);
+      return white(0.03);
+    }
+    if (isSelected) return amber(0.12);
+    return white(0.05);
+  }, [chordChoice, revealed, lastCorrect, validChordIds]);
 
   function startQuiz() {
     const pool = enabledChords.length ? enabledChords : PIANO_CHORDS;
@@ -143,11 +211,12 @@ export default function PianoChordQuizPage() {
     ];
     setAnswers(newAnswers);
 
-    setTimeout(() => {
+    autoAdvanceRef.current = setTimeout(() => {
       const next = qIndex + 1;
       if (next >= questions.length) {
         setTotalTime(Date.now() - startTime);
         setScreen("results");
+        setLocked(false);
       } else {
         setQIndex(next);
         setRootChoice(null);
@@ -169,40 +238,13 @@ export default function PianoChordQuizPage() {
     if (rootChoice !== null) evaluate(rootChoice, id);
   }
 
-  function toggleChord(id: string) {
-    setEnabledIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        if (next.size === 1) return prev;
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  }
-
-  function toggleGroup(groupId: PianoChordGroup) {
-    const gc   = PIANO_CHORDS.filter((c) => c.group === groupId);
-    const allOn = gc.every((c) => enabledIds.has(c.id));
-    setEnabledIds((prev) => {
-      const next = new Set(prev);
-      if (allOn) {
-        const after = new Set([...next].filter((id) => !gc.some((c) => c.id === id)));
-        return after.size === 0 ? prev : after;
-      }
-      gc.forEach((c) => next.add(c.id));
-      return next;
-    });
-  }
-
   // ─── Config ───────────────────────────────────────────────────────────────
 
   if (screen === "config") {
     const btnBase: React.CSSProperties = { borderRadius: 10, color: "inherit", cursor: "pointer" };
     const activeStyle = (on: boolean): React.CSSProperties => ({
-      border: on ? "2px solid rgba(80,160,255,0.8)" : "1px solid rgba(255,255,255,0.18)",
-      background: on ? "rgba(80,160,255,0.12)" : "rgba(255,255,255,0.05)",
+      border: on ? `2px solid ${blue(0.8)}` : `1px solid ${white(0.18)}`,
+      background: on ? blue(0.12) : white(0.05),
       fontWeight: on ? 700 : 400,
     });
 
@@ -228,9 +270,10 @@ export default function PianoChordQuizPage() {
               );
             })}
             <input
-              type="number" min={1} max={100} placeholder="Custom" value={customInput}
+              type="number" inputMode="numeric" pattern="[0-9]*" min={1} max={100} placeholder="Custom" aria-label="Number of questions" value={customInput}
               onChange={(e) => { setCustomInput(e.target.value); const n = parseInt(e.target.value, 10); if (!isNaN(n) && n >= 1) setTotalQ(Math.min(n, 100)); }}
-              style={{ width: 90, padding: "0.65rem 0.8rem", borderRadius: 10, border: customInput ? "2px solid rgba(80,160,255,0.8)" : "1px solid rgba(255,255,255,0.18)", background: "rgba(255,255,255,0.05)", color: "inherit", fontSize: 15 }}
+              onBlur={() => { if (!customInput) return; setCustomInput(String(totalQ)); }}
+              style={{ width: 90, padding: "0.65rem 0.8rem", borderRadius: 10, border: customInput ? `2px solid ${blue(0.8)}` : `1px solid ${white(0.18)}`, background: white(0.05), color: "inherit", fontSize: 16 }}
             />
           </div>
           <div style={{ marginTop: 8, opacity: 0.6, fontSize: 13 }}>
@@ -243,10 +286,11 @@ export default function PianoChordQuizPage() {
           <div style={{ fontWeight: 700, marginBottom: 10 }}>Chord preset</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {PIANO_PRESETS.map((preset) => {
-              const on = preset.ids.length === enabledChords.length && preset.ids.every((id) => enabledIds.has(id));
+              const on = preset.ids.length === enabledChords.length && preset.ids.every((id) => enabledSet.has(id));
               return (
-                <button key={preset.label} onClick={() => setEnabledIds(new Set(preset.ids))}
-                  style={{ ...btnBase, ...activeStyle(on), padding: "0.5rem 1rem", fontSize: 14 }}>
+                <button key={preset.label} onClick={() => applyPreset(preset.ids)}
+                  aria-pressed={on}
+                  style={{ ...btnBase, ...activeStyle(on), padding: "0.5rem 1rem", minHeight: 44, fontSize: 14 }}>
                   {preset.label}
                 </button>
               );
@@ -262,7 +306,7 @@ export default function PianoChordQuizPage() {
           <div style={{ marginTop: 12 }}>
             {PIANO_CHORD_GROUPS.map((group) => {
               const gc   = PIANO_CHORDS.filter((c) => c.group === group.id);
-              const allOn = gc.every((c) => enabledIds.has(c.id));
+              const allOn = gc.every((c) => enabledSet.has(c.id));
               return (
                 <div key={group.id} style={{ marginBottom: 14 }}>
                   <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer", marginBottom: 8, fontWeight: 700 }}>
@@ -271,10 +315,10 @@ export default function PianoChordQuizPage() {
                   </label>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginLeft: 24 }}>
                     {gc.map((chord) => {
-                      const on = enabledIds.has(chord.id);
-                      const isLast = on && enabledIds.size === 1;
+                      const on = enabledSet.has(chord.id);
+                      const isLast = on && enabledSet.size === 1;
                       return (
-                        <label key={chord.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "0.5rem 0.8rem", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: on ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.1)", cursor: isLast ? "not-allowed" : "pointer", opacity: isLast ? 0.7 : 1 }}>
+                        <label key={chord.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "0.5rem 0.8rem", borderRadius: 8, border: `1px solid ${white(0.15)}`, background: on ? white(0.08) : black(0.1), cursor: isLast ? "not-allowed" : "pointer", opacity: isLast ? 0.7 : 1 }}>
                           <input type="checkbox" checked={on} disabled={isLast} onChange={() => toggleChord(chord.id)} />
                           <span style={{ fontWeight: 600 }}>{chord.label}</span>
                           <span style={{ opacity: 0.55, fontSize: 12 }}>({chord.short})</span>
@@ -293,11 +337,11 @@ export default function PianoChordQuizPage() {
           <div style={{ fontWeight: 700, marginBottom: 10 }}>Options</div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button onClick={() => setNaturalRoots((v) => !v)}
-              style={{ ...btnBase, ...activeStyle(naturalRoots), padding: "0.6rem 1.1rem", fontSize: 14 }}>
+              style={{ ...btnBase, ...activeStyle(naturalRoots), padding: "0.6rem 1.1rem", minHeight: 44, fontSize: 14 }}>
               {naturalRoots ? "✓ " : ""}Natural roots only (C D E F G A B)
             </button>
             <button onClick={() => setAllowExt((v) => !v)}
-              style={{ ...btnBase, ...activeStyle(allowExt), padding: "0.6rem 1.1rem", fontSize: 14 }}>
+              style={{ ...btnBase, ...activeStyle(allowExt), padding: "0.6rem 1.1rem", minHeight: 44, fontSize: 14 }}>
               {allowExt ? "✓ " : ""}Allow extensions (add9, add11…)
             </button>
           </div>
@@ -306,7 +350,7 @@ export default function PianoChordQuizPage() {
         <button
           onClick={startQuiz}
           disabled={enabledChords.length === 0}
-          style={{ marginTop: "2rem", padding: "0.85rem 2rem", borderRadius: 12, background: "rgba(80,160,255,0.18)", border: "1px solid rgba(80,160,255,0.5)", color: "inherit", fontSize: 16, fontWeight: 700, cursor: enabledChords.length === 0 ? "not-allowed" : "pointer" }}
+          style={{ marginTop: "2rem", padding: "0.85rem 2rem", borderRadius: 12, background: blue(0.18), border: `1px solid ${blue(0.5)}`, color: "inherit", fontSize: 16, fontWeight: 700, cursor: enabledChords.length === 0 ? "not-allowed" : "pointer" }}
         >
           Start →
         </button>
@@ -322,7 +366,7 @@ export default function PianoChordQuizPage() {
 
     return (
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "2rem 1rem" }}>
-        <h1>Quiz Complete</h1>
+        <h1 ref={quizHeadingRef} tabIndex={-1}>Quiz Complete</h1>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, margin: "1.5rem 0" }}>
           {[
@@ -330,7 +374,7 @@ export default function PianoChordQuizPage() {
             { label: "Accuracy", value: `${accuracy}%` },
             { label: "Time",     value: formatTime(totalTime) },
           ].map(({ label, value }) => (
-            <div key={label} style={{ padding: "1rem", borderRadius: 12, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", textAlign: "center" }}>
+            <div key={label} style={{ padding: "1rem", borderRadius: 12, background: white(0.06), border: `1px solid ${white(0.12)}`, textAlign: "center" }}>
               <div style={{ opacity: 0.65, fontSize: 13 }}>{label}</div>
               <div style={{ fontSize: 26, fontWeight: 800, marginTop: 4 }}>{value}</div>
             </div>
@@ -338,7 +382,7 @@ export default function PianoChordQuizPage() {
         </div>
 
         <div style={{ display: "flex", gap: 10, marginBottom: "1.5rem" }}>
-          <button onClick={startQuiz} style={{ padding: "0.7rem 1.5rem", borderRadius: 10, fontWeight: 700, cursor: "pointer", background: "rgba(80,160,255,0.15)", border: "1px solid rgba(80,160,255,0.4)", color: "inherit" }}>
+          <button onClick={startQuiz} style={{ padding: "0.7rem 1.5rem", borderRadius: 10, fontWeight: 700, cursor: "pointer", background: blue(0.15), border: `1px solid ${blue(0.4)}`, color: "inherit" }}>
             Try Again
           </button>
           <button onClick={() => setScreen("config")} style={{ padding: "0.7rem 1.5rem", borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
@@ -346,34 +390,36 @@ export default function PianoChordQuizPage() {
           </button>
         </div>
 
-        <div style={{ borderRadius: 12, overflow: "hidden", border: "1px solid rgba(255,255,255,0.12)" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-            <thead>
-              <tr style={{ background: "rgba(255,255,255,0.07)" }}>
-                {["#", "Your Answer", "Valid Answers", ""].map((h) => (
-                  <th key={h} style={{ padding: "0.7rem 1rem", textAlign: "left", fontWeight: 700 }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {answers.map((a, idx) => {
-                const yourChord = PIANO_CHORDS.find((c) => c.id === a.chosenChordId)?.label ?? "?";
-                const validLabels = a.validAnswers.map(validAnswerLabel);
-                return (
-                  <tr key={idx} style={{ borderTop: "1px solid rgba(255,255,255,0.07)", background: idx % 2 ? "rgba(255,255,255,0.02)" : "transparent" }}>
-                    <td style={{ padding: "0.6rem 1rem", opacity: 0.5 }}>{idx + 1}</td>
-                    <td style={{ padding: "0.6rem 1rem", fontWeight: 700, color: a.correct ? "rgba(0,255,160,0.9)" : "rgba(255,80,80,0.9)" }}>
-                      {a.chosenRoot} {yourChord}
-                    </td>
-                    <td style={{ padding: "0.6rem 1rem", opacity: 0.8 }}>
-                      {validLabels.join(" · ")}
-                    </td>
-                    <td style={{ padding: "0.6rem 1rem" }}>{a.correct ? "✅" : "❌"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div style={{ borderRadius: 12, overflow: "hidden", border: `1px solid ${white(0.12)}` }}>
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <thead>
+                <tr style={{ background: white(0.07) }}>
+                  {["#", "Your Answer", "Valid Answers", ""].map((h) => (
+                    <th key={h} scope="col" style={{ padding: "0.7rem 1rem", textAlign: "left", fontWeight: 700 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {answers.map((a, idx) => {
+                  const yourChord = PIANO_CHORDS.find((c) => c.id === a.chosenChordId)?.label ?? "?";
+                  const validLabels = a.validAnswers.map(validAnswerLabel);
+                  return (
+                    <tr key={idx} style={{ borderTop: `1px solid ${white(0.07)}`, background: idx % 2 ? white(0.02) : "transparent" }}>
+                      <td style={{ padding: "0.6rem 1rem", opacity: 0.5 }}>{idx + 1}</td>
+                      <td style={{ padding: "0.6rem 1rem", fontWeight: 700, color: a.correct ? green(0.9) : red(0.9) }}>
+                        {a.chosenRoot} {yourChord}
+                      </td>
+                      <td style={{ padding: "0.6rem 1rem", opacity: 0.8 }}>
+                        {validLabels.join(" · ")}
+                      </td>
+                      <td style={{ padding: "0.6rem 1rem" }}>{a.correct ? "✅" : "❌"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     );
@@ -381,77 +427,16 @@ export default function PianoChordQuizPage() {
 
   // ─── Quiz ─────────────────────────────────────────────────────────────────
 
-  const current = questions[qIndex];
   if (!current) return null;
 
   const progress     = qIndex / questions.length;
   const correctSoFar = answers.filter((a) => a.correct).length;
-  const revealed     = locked;
-  const lastAnswer   = revealed ? answers[answers.length - 1] : null;
-  const lastCorrect  = lastAnswer?.correct ?? false;
-
-  // All chord tones shown in blue — no root colour hint
-  const pianoHighlights: PianoHighlight[] = current.noteMidis.map((m) => {
-    if (current.extension && m === current.rootMidi + current.extension.semitone)
-      return { midi: m, kind: "extension" };
-    return { midi: m, kind: "note" };
-  });
-
-  // Valid root semitones and chord ids (for hint colouring after reveal)
-  const validRootSems  = new Set(currentValidAnswers.map((va) => va.rootSemitone));
-  const validChordIds  = new Set(currentValidAnswers.map((va) => va.chordId));
-
-  function rootBorder(display: string): string {
-    const sem        = ROOT_NAMES.find((r) => r.display === display)?.semitone ?? -1;
-    const isSelected = rootChoice === display;
-    if (revealed) {
-      if (isSelected) return lastCorrect ? "2px solid rgba(0,255,160,0.8)" : "2px solid rgba(255,80,80,0.8)";
-      if (validRootSems.has(sem)) return "2px solid rgba(0,255,160,0.35)";
-      return "1px solid rgba(255,255,255,0.08)";
-    }
-    if (isSelected) return "2px solid rgba(255,200,50,0.8)";
-    return "1px solid rgba(255,255,255,0.18)";
-  }
-
-  function rootBg(display: string): string {
-    const sem        = ROOT_NAMES.find((r) => r.display === display)?.semitone ?? -1;
-    const isSelected = rootChoice === display;
-    if (revealed) {
-      if (isSelected) return lastCorrect ? "rgba(0,255,160,0.12)" : "rgba(255,80,80,0.12)";
-      if (validRootSems.has(sem)) return "rgba(0,255,160,0.05)";
-      return "rgba(255,255,255,0.03)";
-    }
-    if (isSelected) return "rgba(255,200,50,0.12)";
-    return "rgba(255,255,255,0.05)";
-  }
-
-  function chordBorder(id: string): string {
-    const isSelected = chordChoice === id;
-    if (revealed) {
-      if (isSelected) return lastCorrect ? "2px solid rgba(0,255,160,0.8)" : "2px solid rgba(255,80,80,0.8)";
-      if (validChordIds.has(id)) return "2px solid rgba(0,255,160,0.35)";
-      return "1px solid rgba(255,255,255,0.08)";
-    }
-    if (isSelected) return "2px solid rgba(255,200,50,0.8)";
-    return "1px solid rgba(255,255,255,0.18)";
-  }
-
-  function chordBg(id: string): string {
-    const isSelected = chordChoice === id;
-    if (revealed) {
-      if (isSelected) return lastCorrect ? "rgba(0,255,160,0.12)" : "rgba(255,80,80,0.12)";
-      if (validChordIds.has(id)) return "rgba(0,255,160,0.05)";
-      return "rgba(255,255,255,0.03)";
-    }
-    if (isSelected) return "rgba(255,200,50,0.12)";
-    return "rgba(255,255,255,0.05)";
-  }
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "2rem 1rem" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 14 }}>
-        <h1 style={{ margin: 0 }}>Piano Chord Quiz</h1>
+        <h1 ref={quizHeadingRef} tabIndex={-1} style={{ margin: 0, fontSize: "clamp(1.3rem, 5vw, 2rem)" }}>Piano Chord Quiz</h1>
         <div style={{ marginLeft: "auto", display: "flex", gap: 20, alignItems: "center" }}>
           <div style={{ opacity: 0.85, fontSize: 14 }}><b>Q:</b> {qIndex + 1} / {questions.length}</div>
           <div style={{ opacity: 0.85, fontSize: 14 }}><b>Correct:</b> {correctSoFar}</div>
@@ -462,12 +447,31 @@ export default function PianoChordQuizPage() {
       </div>
 
       {/* Progress bar */}
-      <div style={{ height: 4, borderRadius: 999, background: "rgba(255,255,255,0.10)", marginBottom: 18, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${progress * 100}%`, background: "rgba(80,160,255,0.7)", borderRadius: 999, transition: "width 0.3s" }} />
+      <div
+        role="progressbar"
+        aria-valuenow={Math.round(progress * 100)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label="Quiz progress"
+        style={{ height: 4, borderRadius: 999, background: white(0.10), marginBottom: 18, overflow: "hidden" }}
+      >
+        <div style={{ height: "100%", width: `${progress * 100}%`, background: blue(0.7), borderRadius: 999, transition: "width 0.3s" }} />
       </div>
 
       {/* Piano */}
       <PianoDisplay highlights={pianoHighlights} />
+
+      {revealed && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{ marginTop: 10, padding: "0.6rem 1rem", borderRadius: 12, background: white(0.06) }}
+        >
+          {lastCorrect
+            ? `✅ Correct — ${lastAnswer!.chosenRoot} ${PIANO_CHORDS.find((c) => c.id === lastAnswer!.chosenChordId)?.label ?? "?"}`
+            : `❌ ${lastAnswer!.chosenRoot} ${PIANO_CHORDS.find((c) => c.id === lastAnswer!.chosenChordId)?.label ?? "?"} — correct was ${validAnswerLabel(lastAnswer!.validAnswers[0])}`}
+        </div>
+      )}
 
       {/* Legend */}
       <div style={{ display: "flex", gap: 16, margin: "8px 0 22px", fontSize: 12, opacity: 0.65 }}>
@@ -475,7 +479,7 @@ export default function PianoChordQuizPage() {
           <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 3, background: "rgba(100,180,255,0.9)", marginRight: 5, verticalAlign: "middle" }} />
           Chord tone
         </span>
-        {allowExt && (
+        {current.extension !== null && (
           <span>
             <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 3, background: "rgba(190,100,255,0.85)", marginRight: 5, verticalAlign: "middle" }} />
             Extension
@@ -486,14 +490,16 @@ export default function PianoChordQuizPage() {
       {/* Root buttons */}
       <div style={{ marginBottom: 18 }}>
         <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 12, opacity: 0.6, textTransform: "uppercase", letterSpacing: "0.07em" }}>Root</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, maxWidth: 560 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(44px, 1fr))", gap: 8, maxWidth: 560 }}>
           {ROOT_NAMES.map(({ display }) => (
             <button
               key={display}
               onClick={() => handleRootChoice(display)}
               disabled={locked}
+              aria-pressed={rootChoice === display}
               style={{
                 padding: "0.75rem 0.3rem",
+                minHeight: 44,
                 borderRadius: 10,
                 border: rootBorder(display),
                 background: rootBg(display),
@@ -519,8 +525,10 @@ export default function PianoChordQuizPage() {
               key={chord.id}
               onClick={() => handleChordChoice(chord.id)}
               disabled={locked}
+              aria-pressed={chordChoice === chord.id}
               style={{
                 padding: "0.75rem 1.1rem",
+                minHeight: 44,
                 borderRadius: 10,
                 border: chordBorder(chord.id),
                 background: chordBg(chord.id),

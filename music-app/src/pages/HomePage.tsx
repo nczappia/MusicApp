@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { black, blue, orange, white } from "../utils/theme";
 
 const SECTIONS = [
   {
@@ -6,8 +7,8 @@ const SECTIONS = [
     icon: "🎸",
     title: "Guitar",
     tagline: "Build fretboard fluency.",
-    accent: "rgba(255,160,60,0.10)",
-    border: "rgba(255,160,60,0.28)",
+    accent: orange(0.10),
+    border: orange(0.28),
     quizzes: [
       {
         name: "Find All Positions",
@@ -52,8 +53,8 @@ const SECTIONS = [
     icon: "🎵",
     title: "Ear Training",
     tagline: "Develop your musical hearing.",
-    accent: "rgba(80,160,255,0.08)",
-    border: "rgba(80,160,255,0.28)",
+    accent: blue(0.08),
+    border: blue(0.28),
     quizzes: [
       {
         name: "Interval Quiz",
@@ -93,7 +94,7 @@ export default function HomePage() {
 }
 
 function SectionCard({
-  icon, title, tagline, accent, border, quizzes, to,
+  icon, title, tagline, accent, border, quizzes,
 }: typeof SECTIONS[number]) {
   return (
     <div
@@ -109,7 +110,7 @@ function SectionCard({
       }}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
-        (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 28px rgba(0,0,0,0.22)";
+        (e.currentTarget as HTMLElement).style.boxShadow = `0 8px 28px ${black(0.22)}`;
       }}
       onMouseLeave={(e) => {
         (e.currentTarget as HTMLElement).style.transform = "";
@@ -127,8 +128,8 @@ function SectionCard({
             style={{
               padding: "0.7rem 0.85rem",
               borderRadius: 10,
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.10)",
+              background: white(0.06),
+              border: `1px solid ${white(0.10)}`,
             }}
           >
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3 }}>{q.name}</div>

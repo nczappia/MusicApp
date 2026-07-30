@@ -93,10 +93,19 @@ export function makePianoQuestion(
 ): PianoQuestion {
   const chord = chords[Math.floor(Math.random() * chords.length)];
 
-  const maxExtSemitone = allowExtensions && extensions.length > 0
-    ? Math.max(...extensions.map((e) => e.semitone))
-    : 0;
-  const maxInterval = Math.max(...chord.intervals, maxExtSemitone);
+  // Exclude extensions whose semitone (mod 12) duplicates an existing chord tone
+  const chordSemitones = new Set(chord.intervals.map((i) => i % 12));
+  const availableExtensions = extensions.filter(
+    (e) => !chordSemitones.has(e.semitone % 12),
+  );
+
+  // Decide whether to add an extension (40% chance when allowed and available)
+  const extension =
+    allowExtensions && availableExtensions.length > 0 && Math.random() < 0.4
+      ? availableExtensions[Math.floor(Math.random() * availableExtensions.length)]
+      : null;
+
+  const maxInterval = Math.max(...chord.intervals, extension?.semitone ?? 0);
 
   // Valid root range: root + highest interval must fit on the piano
   const rootMin = PIANO_START_MIDI;
@@ -108,14 +117,9 @@ export function makePianoQuestion(
   for (let m = rootMin; m <= rootMax; m++) {
     if (!naturalRootsOnly || naturalSemitones.has(m % 12)) validRoots.push(m);
   }
+  if (validRoots.length === 0) throw new Error(`No valid roots for chord "${chord.id}" with maxInterval=${maxInterval}`);
 
   const rootMidi = validRoots[Math.floor(Math.random() * validRoots.length)];
-
-  // Decide whether to add an extension (40% chance when allowed and available)
-  const extension =
-    allowExtensions && extensions.length > 0 && Math.random() < 0.4
-      ? extensions[Math.floor(Math.random() * extensions.length)]
-      : null;
 
   const noteMidis = [
     ...chord.intervals.map((i) => rootMidi + i),

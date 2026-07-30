@@ -27,5 +27,6 @@ export function randInt(min: number, max: number): number {
 }
 
 export function pick<T>(arr: T[]): T {
+  if (arr.length === 0) throw new Error("pick: empty array");
   return arr[randInt(0, arr.length - 1)];
 }
